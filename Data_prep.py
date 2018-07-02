@@ -1,6 +1,8 @@
 import numpy as np
 import h5py
 
+#File to store functions for reading and formatting the data from the hdf5 files.
+
 def read_data(filename):
     with h5py.File(filename, 'r') as d:
         data = d["Data"]
@@ -28,3 +30,8 @@ def partial_format(data, sizes, response, max_size): # Function to create 3D lat
                 lattice_map[count,int(max_len-1+data[num,i,1]),int(max_len-1+data[num,i,2]),int(max_len-1+data[num,i,3]),0] = dataa[count, i]
             count += 1
     return dataa, lattice_map, location, final
+
+# location indicates the current place where the protein has been folded up to.
+# dataa is the chain of amino acids
+# lattice_map is the 3D array to hold the spatial locations of the folded protein
+# final is the response or the evaluation energies for all of the partially folded proteins.

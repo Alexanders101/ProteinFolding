@@ -6,10 +6,11 @@ import csv
 
 import h5py
 
-max_size = 25
-sample_size = 50000
-max_aa = 40
-directions = False
+max_size = 25 # Max size of the Lattice from the origin(0, 0, 0) to the edge in any direction.
+sample_size = 50000 # Number of training examples to make
+max_aa = 40 # Max length of amino acids
+directions = False # Boolean to include a direction which indicates where the previous
+                    # amino acid was located relative to the current one.
 
 file_store = 'small_data_res.h5'
 
