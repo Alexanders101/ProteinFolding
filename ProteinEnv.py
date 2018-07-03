@@ -7,13 +7,41 @@ def coord_hash(coord, L, res):
     res[0] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
 
 class NPProtein():
-    def __init__(self, energy_distance=2):
+    def __init__(self, max_length, energy_distance=2):
+        """
+        Container Class for NP Protein Environment.
+
+        Parameters
+        ----------
+        max_length : int
+            Maximum length of protein strings
+        energy_distance : float
+            Distance to evaluate neighboring acids
+        """
         self.moves = np.arange(0, 12)
         self.directions = np.array([(1, 1, 0), (-1, 1, 0), (1, -1, 0), (-1, -1, 0), (1, 0, 1), (1, 0, -1), (-1, 0, 1), (-1, 0, -1), (0, 1, 1), (0, 1, -1), (0, -1, 1), (0, -1, -1)])
         self.energy_distance = energy_distance
 
+        self.max_length = max_length
+        self.state_shape = (5, max_length)
+
     def new_state(self, protein_string):
+        """
+        Create a new NP Protein state from an amino acid sequence
+
+        Parameters
+        ----------
+        protein_string : np.ndarray[int64]
+            Numpy array of amino acid sequence. H = 0, P = 1.
+
+        Returns
+        -------
+        np.ndarray[int64, (5, max_length)]
+            State representation of protein.
+
+        """
         protein_length = protein_string.shape[0]
+        assert protein_length <= self.max_length, "Input protein is longer than maximum allowed protein"
 
         out = np.zeros((5, protein_length), dtype=np.int64)
         out[0, :] = protein_string
@@ -22,6 +50,21 @@ class NPProtein():
         return out
 
     def next_state(self, state, action):
+        """
+        Compute the next protein configuration given the direction to place the next protein.
+
+        Parameters
+        ----------
+        state : np.ndarray[int64, (5, max_length)]
+            State object
+        action : int
+            One of the elements in self.moves
+
+        Returns
+        -------
+        np.ndarray[int64, (5, max_length)]
+            A new state object
+        """
         state = state.copy()
         next_move = self.directions[action]
         index = state[1, 0]
@@ -33,11 +76,28 @@ class NPProtein():
         return state
 
     def next_state_multi(self, state, actions):
+        """
+        Compute multiple action on a single state. This is used for optimization purposes.
+
+        """
         return np.asarray([self.next_state(state, x) for x in actions])
         # save = self.legal(state)
         # return [self.next_state(state, x) for x in actions if x in save]
 
     def legal(self, state):
+        """
+        The valid moves to perform given a state.
+        Parameters
+        ----------
+        state : np.ndarray[int64, (5, max_length)]
+            State object
+
+        Returns
+        -------
+        set
+            The valid moves that can be performed.
+
+        """
         size = state.shape[1]
         current_index = state[1, 0] - 1
         last_coord = state[2:, current_index]
@@ -49,13 +109,51 @@ class NPProtein():
         return {i for i, h in enumerate(possible_moves_H) if h not in visited_H}
 
     def hash(self, state):
+        """
+        Convert a state object in a hashable datatype for use in python dicts.
+        Parameters
+        ----------
+        state : np.ndarray[int64, (5, max_length)]
+            State object
+
+        Returns
+        -------
+        Hashed Value
+
+        """
         return xxhash.xxh64(state, seed=0).intdigest()
         #return state.tostring()
 
     def done(self, state):
+        """
+        Whether or not a given state is an ending state.
+
+        Parameters
+        ----------
+        state : np.ndarray[int64, (5, max_length)]
+            State object
+
+        Returns
+        -------
+        bool
+
+        """
         return state[1, -1] > 0
 
     def reward(self, state):
+        """
+        Get the reward value of a given state
+
+        Parameters
+        ----------
+        state : np.ndarray[int64, (5, max_length)]
+            State object
+
+        Returns
+        -------
+        float [0, inf]
+            Reward
+        """
         aa_string = state[0, ]
         lattice = state[2:, ].T
         num = state[1, 0]
