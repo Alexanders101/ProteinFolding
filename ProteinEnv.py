@@ -28,7 +28,7 @@ class NPProtein():
         state[1, index] = 1
         previous = state[2:, index - 1]
         next = previous + next_move
-        state[2:, count] = next
+        state[2:, index] = next
         state[1, 0] = index + 1
         return state
 
