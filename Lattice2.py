@@ -8,7 +8,7 @@ class Lattice2():
         self.dim = dim
         self.lattice = np.zeros((length, dim))
         self.current = 1
-        self.prev_coord = np.zeros(dim)
+        self.prev_coord = np.array([max_size-1, max_size-1, max_size-1])
         self.directions = np.zeros(length-1)
         self.lattice[0, :self.dim] = self.prev_coord  # starts at origin
         self.coord_set = {tuple(self.prev_coord)}
@@ -45,11 +45,11 @@ class Lattice2():
         return tot_energy
 
     def reset_rand(self):
-        self.prev_coord = np.zeros(self.dim)
+        self.prev_coord = np.array([self.max_size-1, self.max_size-1, self.max_size-1])
         self.coord_set = {tuple(self.prev_coord)}
         self.lattice = np.zeros((self.size, self.dim))
         self.lattice[0, :self.dim] = self.prev_coord
-        self.directions = np.zeros(length - 1)
+        self.directions = np.zeros(self.size - 1)
         return self.make_rand()
 
     def make_rand(self):  # method to make a random protein fold and evaluates energy level
@@ -61,7 +61,7 @@ class Lattice2():
                 print("No where to put next amino acid.")
                 return self.reset_rand()
             curr = np.array(list(next_moves)[int(np.random.choice(np.arange(num), size=1))])
-            if max(abs(curr)) > self.max_size:
+            if max(curr) > self.max_size*2-2 or min(curr) < 0:
                 print("Went off the grid.")
                 return self.reset_rand()
             move = tuple(curr - self.prev_coord)
