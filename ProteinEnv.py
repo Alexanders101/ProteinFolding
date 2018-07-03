@@ -1,5 +1,6 @@
 import numpy as np
 from numba import jit, vectorize
+import xxhash
 
 @jit("int64(int64[::1])", nopython=True)
 def last_nonzero(arr):
@@ -39,7 +40,7 @@ class NPProtein():
         pass
 
     def hash(self, state):
-        pass
+        return xxhash.xxh64(state).intdigest()
 
     def done(self, state):
         pass
