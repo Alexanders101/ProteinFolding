@@ -1,14 +1,10 @@
 import numpy as np
-from numba import jit, vectorize
+from numba import jit, vectorize, guvectorize, int64
 import xxhash
 
-@jit("int64(int64[::1])", nopython=True)
-def last_nonzero(arr):
-    size = arr.shape[0]
-    for i in range(size):
-        if arr[i] == 0:
-            return i-1
-    return -1
+@guvectorize([(int64[:], int64, int64[:])], "(n),()->()", nopython=True, target="cpu")
+def coord_hash(coord, L, res):
+    res[0] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
 
 class NPProtein():
     def __init__(self):
@@ -36,8 +32,16 @@ class NPProtein():
     def next_state_multi(self, state, actions):
         pass
 
-    def legal(self, state, move):
-        pass
+    def legal(self, state):
+        L = state.shape[1]
+        current_index = state[1, 0] - 1
+        last_coord = state[2:, current_index]
+        possible_moves = last_coord + self.directions
+
+        possible_moves_H = coord_hash(possible_moves, L)
+        visited_H = set(coord_hash(state[2:, :current_index + 1].T, L))
+
+        return {i for i, h in enumerate(possible_moves_H) if h not in visited_H}
 
     def hash(self, state):
         return xxhash.xxh64(state).intdigest()
