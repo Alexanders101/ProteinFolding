@@ -7,9 +7,10 @@ def coord_hash(coord, L, res):
     res[0] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
 
 class NPProtein():
-    def __init__(self):
-        self.moves = np.arange(0, 6)
+    def __init__(self, energy_distance=2):
+        self.moves = np.arange(0, 12)
         self.directions = np.array([(1, 1, 0), (-1, 1, 0), (1, -1, 0), (-1, -1, 0), (1, 0, 1), (1, 0, -1), (-1, 0, 1), (-1, 0, -1), (0, 1, 1), (0, 1, -1), (0, -1, 1), (0, -1, -1)])
+        self.energy_distance = energy_distance
 
     def new_state(self, protein_string):
         protein_length = protein_string.shape[0]
@@ -32,7 +33,8 @@ class NPProtein():
         return state
 
     def next_state_multi(self, state, actions):
-        pass
+        save = self.legal(state)
+        return [self.next_state(state, x) for x in actions if x in save]
 
     def legal(self, state):
         L = state.shape[1]
@@ -50,7 +52,15 @@ class NPProtein():
         #return state.tostring()
 
     def done(self, state):
-        pass
+        return state[1,-1]>0
 
-    def reset(self):
-        pass
+    def eval_energy(self, state):
+        aa_string = state[0, ]
+        lattice = state[2:, ].T
+        num = state[1, 0]
+        tot_energy = 0
+        for i in range(num):
+            for j in range(i + 2, num):
+                if aa_string[i] + aa_string[j] == 2 and np.linalg.norm(lattice[i, ] - lattice[j, ]) <= self.energy_distance:
+                    tot_energy -= 1
+        return tot_energy
