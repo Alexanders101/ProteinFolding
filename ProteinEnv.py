@@ -9,6 +9,7 @@ def coord_hash(coord, L, res):
 class NPProtein():
     def __init__(self):
         self.moves = np.arange(0, 6)
+        self.directions = np.array([(1, 1, 0), (-1, 1, 0), (1, -1, 0), (-1, -1, 0), (1, 0, 1), (1, 0, -1), (-1, 0, 1), (-1, 0, -1), (0, 1, 1), (0, 1, -1), (0, -1, 1), (0, -1, -1)])
 
     def new_state(self, protein_string):
         protein_length = protein_string.shape[0]
@@ -20,6 +21,7 @@ class NPProtein():
         return out
 
     def next_state(self, state, action):
+        state = state.copy()
         next_move = self.directions[action]
         index = state[1, 0]
         state[1, index] = 1
@@ -45,6 +47,7 @@ class NPProtein():
 
     def hash(self, state):
         return xxhash.xxh64(state).intdigest()
+        #return state.tostring()
 
     def done(self, state):
         pass
