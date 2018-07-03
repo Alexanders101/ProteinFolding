@@ -33,7 +33,7 @@ class NPProtein():
         return state
 
     def next_state_multi(self, state, actions):
-        return [self.next_state(state, x) for x in actions]
+        return np.asarray([self.next_state(state, x) for x in actions])
         # save = self.legal(state)
         # return [self.next_state(state, x) for x in actions if x in save]
 
