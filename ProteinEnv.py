@@ -6,6 +6,15 @@ import xxhash
 def coord_hash(coord, L, res):
     res[0] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
 
+
+@jit('int64(int64[:, ::1], int64)', nopython=True)
+def find_end(protein_string, max_size):
+    i = 0
+    while protein_string[0, i] > 0 and i < max_size:
+        i += 1
+    return i - 1
+
+
 class NPProtein():
     def __init__(self, max_length, energy_distance=2):
         """
@@ -32,7 +41,7 @@ class NPProtein():
         Parameters
         ----------
         protein_string : np.ndarray[int64]
-            Numpy array of amino acid sequence. H = 0, P = 1.
+            Numpy array of amino acid sequence. H = 1, P = 2.
 
         Returns
         -------
@@ -43,8 +52,8 @@ class NPProtein():
         protein_length = protein_string.shape[0]
         assert protein_length <= self.max_length, "Input protein is longer than maximum allowed protein"
 
-        out = np.zeros((5, protein_length), dtype=np.int64)
-        out[0, :] = protein_string
+        out = np.zeros((5, self.max_length), dtype=np.int64)
+        out[0, :protein_length] = protein_string
         out[1, 0] = 1
 
         return out
@@ -83,6 +92,13 @@ class NPProtein():
         return np.asarray([self.next_state(state, x) for x in actions])
         # save = self.legal(state)
         # return [self.next_state(state, x) for x in actions if x in save]
+
+    def random_state(self, length=None):
+        if length is None:
+            length = self.max_length
+
+        random_string = np.random.randint(1, 3, size=length)
+        return self.new_state(random_string)
 
     def legal(self, state):
         """
@@ -138,7 +154,9 @@ class NPProtein():
         bool
 
         """
-        return state[1, -1] > 0
+        # return state[1, -1] > 0
+        final_idx = find_end(state, self.max_length)
+        return state[1, final_idx] > 0
 
     def reward(self, state):
         """

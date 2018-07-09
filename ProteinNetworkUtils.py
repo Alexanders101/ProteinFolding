@@ -39,7 +39,7 @@ class Lattice(Layer):
                          infer_shape=True)
 
     def compute_output_shape(self, input_shape):
-        return input_shape[0], 2 * self.N - 1, 2 * self.N - 1, 2 * self.N - 1
+        return 2 * self.N - 1, 2 * self.N - 1, 2 * self.N - 1
 
     def _make_lattice(self, data):
         acids, idx, mask = data
