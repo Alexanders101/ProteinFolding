@@ -39,7 +39,7 @@ class Lattice(Layer):
                          infer_shape=True)
 
     def compute_output_shape(self, input_shape):
-        return 2 * self.N - 1, 2 * self.N - 1, 2 * self.N - 1
+        return input_shape[0][0], 2 * self.N - 1, 2 * self.N - 1, 2 * self.N - 1
 
     def _make_lattice(self, data):
         acids, idx, mask = data
@@ -48,3 +48,13 @@ class Lattice(Layer):
         masked_acids = tf.boolean_mask(acids, mask, axis=0)
         return tf.sparse_to_dense(masked_idx, (2 * self.N - 1, 2 * self.N - 1, 2 * self.N - 1), masked_acids,
                                   validate_indices=False)
+
+from keras.layers.core import Lambda
+
+class RemoveMask(Lambda):
+    def __init__(self):
+        super(RemoveMask, self).__init__((lambda x, mask: x))
+        self.supports_masking = True
+
+    def compute_mask(self, input, input_mask=None):
+        return None
