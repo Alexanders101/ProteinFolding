@@ -121,8 +121,8 @@ class NPProtein():
         Hashed Value
 
         """
-        return xxhash.xxh64(state, seed=0).intdigest()
-        #return state.tostring()
+        # return xxhash.xxh64(state, seed=0).intdigest()
+        return state.tostring()
 
     def done(self, state):
         """
