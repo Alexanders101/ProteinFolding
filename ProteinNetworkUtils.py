@@ -43,6 +43,7 @@ class Lattice(Layer):
 
     def _make_lattice(self, data):
         acids, idx, mask = data
+        idx = idx + (self.N - 1)
         masked_idx = tf.boolean_mask(idx, mask, axis=0)
         masked_acids = tf.boolean_mask(acids, mask, axis=0)
         return tf.sparse_to_dense(masked_idx, (2 * self.N - 1, 2 * self.N - 1, 2 * self.N - 1), masked_acids,
