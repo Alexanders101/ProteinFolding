@@ -1,6 +1,7 @@
 import numpy as np
 from numba import jit, vectorize, guvectorize, int64
 import xxhash
+import random
 
 @guvectorize([(int64[:], int64, int64[:])], "(n),()->()", nopython=True, target="cpu")
 def coord_hash(coord, L, res):
@@ -55,7 +56,6 @@ class NPProtein():
         out = np.zeros((5, self.max_length), dtype=np.int64)
         out[0, :protein_length] = protein_string
         out[1, 0] = 1
-
         return out
 
     def next_state(self, state, action):
@@ -99,6 +99,14 @@ class NPProtein():
 
         random_string = np.random.randint(1, 3, size=length)
         return self.new_state(random_string)
+
+    def random_moves(self, state):
+        for x in range(self.max_length-1):
+            potential = list(self.legal(state))
+            if not potential:
+                return state
+            state = self.next_state(state, random.choice(potential))
+        return state
 
     def legal(self, state):
         """
