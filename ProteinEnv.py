@@ -100,11 +100,14 @@ class NPProtein():
         random_string = np.random.randint(1, 3, size=length)
         return self.new_state(random_string)
 
-    def random_moves(self, state):
-        for x in range(self.max_length-1):
+    def random_moves(self, state, length=None):
+        if length is None:
+            length = self.max_length
+        for x in range(length-1):
             potential = list(self.legal(state))
             if not potential:
-                return state
+                state = self.new_state(state[0,:])
+                return self.random_moves(state, length)
             state = self.next_state(state, random.choice(potential))
         return state
 
