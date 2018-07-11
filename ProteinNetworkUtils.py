@@ -75,7 +75,7 @@ class LatticeSnake(Layer):
         inter_idx = tf.cast(tf.nn.pool(tf.cast(idx, tf.float32), [2], "AVG", "VALID"), tf.int64)
 
         inter_values = tf.nn.pool(tf.expand_dims(acids, 2), [2], "AVG", "VALID")
-        inter_values = tf.reshape(inter_values, (-1, 9))
+        inter_values = tf.reshape(inter_values, (-1, self.N-1))
         inter_values = 2 * inter_values + 1
 
         inter_mask = mask[:, 1:]
