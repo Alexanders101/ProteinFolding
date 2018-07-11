@@ -134,8 +134,8 @@ class BooleanMask(Layer):
 
     def call(self, inputs, **kwargs):
         data, mask = inputs
-        mask = tf.cast(mask, tf.float32)
+        mask = tf.expand_dims(tf.cast(mask, tf.float32), -1)
         return data * mask
 
     def compute_output_shape(self, input_shape):
-        return input_shape
+        return input_shape[0]
