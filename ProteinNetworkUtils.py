@@ -110,8 +110,10 @@ class LatticeSnake(Layer):
             result.set_shape((self.K, self.K, self.K))
             return result
 
-        regions = tf.map_fn(extractRegion, idx - self.DIFFT, dtype=tf.float32, parallel_iterations=1,
-                            back_prop=False, infer_shape=True, swap_memory=False)
+        offset_idx = idx - self.DIFFT
+        regions = tf.stack([extractRegion(offset_idx[i]) for i in range(self.N)])
+        # regions = tf.map_fn(extractRegion, idx - self.DIFFT, dtype=tf.float32, parallel_iterations=1,
+        #                     back_prop=False, infer_shape=True, swap_memory=False)
         regions = regions * float_mask
         return regions
 
