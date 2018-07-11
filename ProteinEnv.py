@@ -1,12 +1,21 @@
 import numpy as np
 from numba import jit, vectorize, guvectorize, int64
+from numba.types import Set
 import xxhash
 import random
 
 @guvectorize([(int64[:], int64, int64[:])], "(n),()->()", nopython=True, target="cpu")
-def coord_hash(coord, L, res):
+def coord_hash_old(coord, L, res):
     res[0] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
 
+@jit("int64[::1](int64[:, :], int64)")
+def coord_hash(coords, L):
+    num_coords = coords.shape[0]
+    result = np.empty(num_coords, np.int64)
+    for i in range(num_coords):
+        coord = coords[i]
+        result[i] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
+    return result
 
 @jit('int64(int64[:, ::1], int64)', nopython=True)
 def find_end(protein_string, max_size):
@@ -15,6 +24,39 @@ def find_end(protein_string, max_size):
         i += 1
     return i - 1
 
+@jit('void(int64[:, ::1], int64[::1])', nopython=True)
+def _next_state(state, move):
+    index = state[1, 0]
+    state[1, index] = 1
+    previous = state[2:, index - 1]
+    next = previous + move
+    state[2:, index] = next
+    state[1, 0] = index + 1
+
+@jit('int64[:, :, ::1](int64[:, ::1], int64[:, ::1])', nopython=True)
+def _next_state_multi(state, moves):
+    num_moves = moves.shape[0]
+    result = np.empty((num_moves, state.shape[0], state.shape[1]), dtype=np.int64)
+    for i in range(num_moves):
+        result[i, :, :] = state[:, :]
+        _next_state(result[i], moves[i])
+    return result
+
+@jit(Set(int64)(int64[:, ::1], int64[:, ::1]), nopython=True)
+def _legal(state, directions):
+    size = state.shape[1]
+    current_index = state[1, 0] - 1
+    last_coord = state[2:, current_index]
+    possible_moves = last_coord + directions
+
+    possible_moves_H = coord_hash(possible_moves, size)
+    visited_H = set(coord_hash(state[2:, :current_index + 1].T, size))
+    result = set()
+    for i in range(directions.shape[0]):
+        h = possible_moves_H[i]
+        if h not in visited_H:
+            result.add(i)
+    return result
 
 class NPProtein():
     def __init__(self, max_length, energy_distance=2):
@@ -76,12 +118,13 @@ class NPProtein():
         """
         state = state.copy()
         next_move = self.directions[action]
-        index = state[1, 0]
-        state[1, index] = 1
-        previous = state[2:, index - 1]
-        next = previous + next_move
-        state[2:, index] = next
-        state[1, 0] = index + 1
+        _next_state(state, next_move)
+        # index = state[1, 0]
+        # state[1, index] = 1
+        # previous = state[2:, index - 1]
+        # next = previous + next_move
+        # state[2:, index] = next
+        # state[1, 0] = index + 1
         return state
 
     def next_state_multi(self, state, actions):
@@ -89,7 +132,9 @@ class NPProtein():
         Compute multiple action on a single state. This is used for optimization purposes.
 
         """
-        return np.asarray([self.next_state(state, x) for x in actions])
+        moves = self.directions[actions]
+        return _next_state_multi(state, moves)
+        # return np.asarray([self.next_state(state, x) for x in actions])
         # save = self.legal(state)
         # return [self.next_state(state, x) for x in actions if x in save]
 
@@ -125,15 +170,16 @@ class NPProtein():
             The valid moves that can be performed.
 
         """
-        size = state.shape[1]
-        current_index = state[1, 0] - 1
-        last_coord = state[2:, current_index]
-        possible_moves = last_coord + self.directions
-
-        possible_moves_H = coord_hash(possible_moves, size)
-        visited_H = set(coord_hash(state[2:, :current_index + 1].T, size))
-
-        return {i for i, h in enumerate(possible_moves_H) if h not in visited_H}
+        return _legal(state, self.directions)
+        # size = state.shape[1]
+        # current_index = state[1, 0] - 1
+        # last_coord = state[2:, current_index]
+        # possible_moves = last_coord + self.directions
+        #
+        # possible_moves_H = coord_hash(possible_moves, size)
+        # visited_H = set(coord_hash(state[2:, :current_index + 1].T, size))
+        #
+        # return {i for i, h in enumerate(possible_moves_H) if h not in visited_H}
 
     def hash(self, state):
         """
