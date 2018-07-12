@@ -1,4 +1,4 @@
-from multiprocessing import Process, Queue, Array
+from multiprocessing import Process, Queue, Array, Event, Value
 from NetworkProcess import NetworkProcess
 from DataProcess import DataProcess
 import numpy as np
@@ -55,8 +55,14 @@ class SimulationProcess(Process):
         self.starting_state = np.ctypeslib.as_array(state_buffer_base)
         self.starting_state = self.starting_state.reshape(state_shape)
 
-        self.input_queue = Queue(1)
-        self.output_queue = Queue()
+        self.input_queue = Event()
+        self.output_queue = Event()
+        self.output_queue.set()
+
+        self.input_param = Value('l', 0, lock=False)
+        self.output_num_nodes = Value('l', 0, lock=False)
+        self.output_pred_time = Value('d', 0.0, lock=False)
+        self.output_run_time = Value('d', 0.0, lock=False)
 
         self.calculation_time = mcts_config['calculation_time']
         self.C = mcts_config['C']
@@ -66,17 +72,28 @@ class SimulationProcess(Process):
         self.verbose = mcts_config['verbose']
 
     def shutdown(self):
-        self.input_queue.put(-1)
+        self.output_queue.wait()
+        self.output_queue.clear()
+
+        self.input_param.value = -1
+        self.input_queue.set()
 
     def simulation(self, clear_tree: bool = True):
+        self.output_queue.wait()
+        self.output_queue.clear()
+
         if clear_tree:
-            self.input_queue.put(0)
+            self.input_param.value = 0
         else:
-            self.input_queue.put(1)
+            self.input_param.value = 1
+
+        self.input_queue.set()
 
     def result(self):
-        res = self.output_queue.get()
-        return {'num_nodes': res[0], 'mean_pred_time': res[1], 'mean_run_time': res[2]}
+        self.output_queue.wait()
+        return {'num_nodes': self.output_num_nodes.value,
+                'mean_pred_time': self.output_pred_time.value,
+                'mean_run_time': self.output_run_time.value}
 
     def __simulation(self, idx: int, tree: set):
         simulation_path = []
@@ -176,7 +193,10 @@ class SimulationProcess(Process):
         self.num_nodes = 0
 
         while True:
-            command = self.input_queue.get()
+            self.input_queue.wait()
+            self.input_queue.clear()
+            command = self.input_param.value
+
             if command == -1:
                 break
 
@@ -187,7 +207,11 @@ class SimulationProcess(Process):
             while (time() - start_time) < self.calculation_time:
                 self.__simulation(idx, tree)
 
-            self.output_queue.put((self.num_nodes, np.mean(self.pred_time), np.mean(self.run_time)))
+            self.output_num_nodes.value = self.num_nodes
+            self.output_pred_time.value = np.mean(self.pred_time)
+            self.output_run_time.value = np.mean(self.run_time)
+            self.output_queue.set()
+
             self.pred_time.clear()
             self.run_time.clear()
             self.num_nodes = 0
