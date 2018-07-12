@@ -44,7 +44,7 @@ class AsyncMCTS:
         "single_tree": False
     }
 
-    def __init__(self, env, make_model, session_config, num_threads=2, **kwargs):
+    def __init__(self, env, make_model, num_threads=2, session_config=None, **kwargs):
         """
         Create a Monte Carlo tree search with asynchronous simulation.
 

@@ -59,6 +59,7 @@ class NetworkProcess(Process):
         keras.backend.set_session(self.session)
 
         self.model = self.make_model()
+        self.model.compile('adam', loss=['categorical_crossentropy', 'MSE'])
 
     def run(self):
         self.__initialize_network()
@@ -76,13 +77,28 @@ class NetworkProcess(Process):
                 ids[size] = self.input_queue.get()
                 size += 1
 
-            policy, value = self.model.predict(input_buffer, batch_size=self.batch_size)
-            policy = policy.reshape(self.num_workers, self.num_states, 12)
-            value = value.reshape(self.num_workers, self.num_states, 1)
+            sorted_idx = np.where(np.bincount(ids[:size]))[0]
+            batch = self.input_buffer[sorted_idx]
+            batch = batch.reshape(size * self.num_states, *self.state_shape)
+
+            policy, value = self.model.predict(batch, batch_size=self.batch_size)
+            policy = policy.reshape(size, self.num_states, 12)
+            value = value.reshape(size, self.num_states, 1)
 
             for i in range(size):
-                idx = ids[i]
-                self.policy_buffer[idx, :, :] = policy[idx, :, :]
-                self.value_buffer[idx, :, :] = value[idx, :, :]
+                idx = sorted_idx[i]
+                self.policy_buffer[idx, :, :] = policy[i, :, :]
+                self.value_buffer[idx, :, :] = value[i, :, :]
 
                 self.output_queue[idx].put(1)
+
+            # policy, value = self.model.predict(input_buffer, batch_size=self.batch_size)
+            # policy = policy.reshape(self.num_workers, self.num_states, 12)
+            # value = value.reshape(self.num_workers, self.num_states, 1)
+            #
+            # for i in range(size):
+            #     idx = ids[i]
+            #     self.policy_buffer[idx, :, :] = policy[idx, :, :]
+            #     self.value_buffer[idx, :, :] = value[idx, :, :]
+            #
+            #     self.output_queue[idx].put(1)
