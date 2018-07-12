@@ -65,11 +65,11 @@ class DataProcess(Process):
         store = self.data[key]
         store[0, action] += 1
         store[1, action] += last_value
-        store[2, action] = max(store[action, 2], last_value)
+        store[2, action] = max(store[2, action], last_value)
         store[3, action] -= 1
 
     def __visit(self, key, action):
-        self.data[key][action, 3] += 1
+        self.data[key][3, action] += 1
 
     def __clear(self):
         self.data.clear()

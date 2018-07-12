@@ -42,6 +42,9 @@ class NetworkProcess(Process):
 
     def predict(self, idx, states):
         assert self.is_alive(), "Network has not been started or has already been shutdown."
+        return self._predict_unsafe(idx, states)
+
+    def _predict_unsafe(self, idx, states):
         self.input_buffer[idx, :] = states[:]
         self.input_queue.put_nowait(idx)
 
