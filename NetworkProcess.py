@@ -22,20 +22,23 @@ class NetworkProcess(Process):
             batch_size = num_states * num_workers
         self.batch_size = batch_size
 
+        self.__ready_queue = Queue(maxsize=1)
+
         self.input_queue = Queue(maxsize=num_workers)
         self.output_queue = [Queue(1) for _ in range(num_workers)]
 
         self.__input_buffer_base = Array(ctypes.c_int64, int(num_workers * num_states * np.prod(state_shape)), lock=False)
-        self.input_buffer = np.ctypeslib.as_array(self.__input_buffer_base.get_obj())
+        self.input_buffer = np.ctypeslib.as_array(self.__input_buffer_base)
         self.input_buffer = self.input_buffer.reshape(num_workers, num_states, *state_shape)
 
         self.__policy_buffer_base = Array(ctypes.c_float, int(num_workers * num_states * num_moves), lock=False)
-        self.policy_buffer = np.ctypeslib.as_array(self.__policy_buffer_base.get_obj())
+        self.policy_buffer = np.ctypeslib.as_array(self.__policy_buffer_base)
         self.policy_buffer = self.policy_buffer.reshape(num_workers, num_states, num_moves)
 
         self.__value_buffer_base = Array(ctypes.c_float, int(num_workers * num_states), lock=False)
-        self.value_buffer = np.ctypeslib.as_array(self.__value_buffer_base.get_obj())
+        self.value_buffer = np.ctypeslib.as_array(self.__value_buffer_base)
         self.value_buffer = self.value_buffer.reshape(num_workers, num_states, 1)
+
 
     def predict(self, idx, states):
         assert self.is_alive(), "Network has not been started or has already been shutdown."
@@ -48,6 +51,9 @@ class NetworkProcess(Process):
     def shutdown(self):
         self.input_queue.put(-1)
 
+    def ready(self):
+        return not self.__ready_queue.empty()
+
     def __initialize_network(self):
         self.session = tf.Session(config=self.session_config)
         keras.backend.set_session(self.session)
@@ -59,6 +65,7 @@ class NetworkProcess(Process):
         ids = np.zeros(self.num_workers, dtype=np.uint16)
         input_buffer = self.input_buffer.reshape(self.num_workers * self.num_states, *self.state_shape)
 
+        self.__ready_queue.put(True)
         while True:
             ids[0] = self.input_queue.get()
             if ids[0] >= self.num_workers:

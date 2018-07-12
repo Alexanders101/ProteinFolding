@@ -20,6 +20,7 @@ path to it. Ideally, for 1.0, implement a full node-based virtual loss.
 
 """
 from PredictorThread import PredictorThread
+from NetworkProcess import NetworkProcess
 from queue import Queue
 from threading import Thread, Lock
 from time import time
@@ -30,6 +31,7 @@ class AsyncMCTS:
     CONFIG_DEFAULTS = {
         "calculation_time": 15,
         "C": 1.4,
+        "batch_size": None,
         "temperature": 1.0,
         "epsilon": 0.3,
         "alpha": 0.03,
@@ -39,7 +41,7 @@ class AsyncMCTS:
         "single_tree": False
     }
 
-    def __init__(self, env, network, num_threads=2, **kwargs):
+    def __init__(self, env, make_model, session_config, num_threads=2, **kwargs):
         """
         Create a Monte Carlo tree search with asynchronous simulation.
 
@@ -50,6 +52,8 @@ class AsyncMCTS:
         network : keras.Model
             A keras model containing the policy and value networks. This networks
             mapping is: State -> (Policy, Value)
+        session_config : tf.ConfigProto
+            A config object for the Tensorflow session created.
         kwargs
             See configuration options
 
@@ -59,6 +63,8 @@ class AsyncMCTS:
             Number of seconds to allow for selecting a move
         C : default = 1.4
             Exploration parameter for the node selection
+        batch_size : default = None
+            Batch size for prediction. Defaults to num_threads * num_moves for optimality.
         temperature : default = 1.0
             Exploration parameter for move selection
         epsilon : default = 0.3
@@ -72,16 +78,13 @@ class AsyncMCTS:
             Verbosity of output
         preinitialize : default = True
             Whether or not to intialize an expanded node with the original predicted value
+        single_tree : default = False
+            Whether or not all of the workers share a single tree
         """
         # Set up environment
         self.env = env
         self.num_moves = len(self.env.moves)
         self.state_shape = self.env.state_shape
-
-        # Set up Network
-        self.network = network
-        self.network._make_predict_function()
-        self.network.predict(np.expand_dims(self.env.random_state(), 0))  # Required to predict from different thread
 
         # Run Dynamic Config setup
         self.config(**kwargs)
@@ -96,30 +99,30 @@ class AsyncMCTS:
         self.Q = {}     # Normalized value of node
         self.V = {}     # Virtual loss count
 
+        # Set up Network
+        self.network_process = NetworkProcess(make_model=make_model,
+                                              state_shape=self.state_shape,
+                                              num_moves=self.num_moves,
+                                              num_states=self.num_moves + 1,
+                                              num_workers=num_threads,
+                                              batch_size=self.batch_size,
+                                              session_config=session_config)
+
         # Multi-threading stuff
         self.num_threads = num_threads
-        self.prediction_queue = Queue()
-        self.result_queues = [Queue() for _ in range(num_threads)]
         self.trees = [set() for _ in range(num_threads)]
         self.store_lock = Lock()
         self.num_nodes = 0
-
-        self.prediction_thread = PredictorThread(self.network,
-                                                 prediction_queue=self.prediction_queue,
-                                                 result_queues=self.result_queues,
-                                                 state_shape=self.state_shape,
-                                                 num_states=self.num_moves + 1,
-                                                 batch_size=num_threads)
-        self.prediction_thread.start()
-
         ###########################################################
         self.pred_time = []
         self.run_time = []
         ###########################################################
 
+        self.network_process.start()
+
+
     def __del__(self):
-        self.prediction_thread.exit_flag = True
-        self.prediction_thread.join(timeout=0.1)
+        self.network_process.shutdown()
 
     def __str__(self):
         out = []
@@ -198,11 +201,7 @@ class AsyncMCTS:
         (Policies, Values)
 
         """
-        # Add our input to the queue
-        self.prediction_queue.put((idx, states))
-
-        # Wait for result to come in
-        return self.result_queues[idx].get()
+        return self.network_process.predict(idx, states)
 
     def clear(self):
         """
