@@ -24,6 +24,9 @@ from NetworkProcess import NetworkProcess
 from queue import Queue
 from threading import Thread, Lock
 from time import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as wait_for_threads
+
 
 import numpy as np
 
@@ -110,6 +113,7 @@ class AsyncMCTS:
 
         # Multi-threading stuff
         self.num_threads = num_threads
+        self.thread_pool = ThreadPoolExecutor(self.num_threads + 1)
         self.trees = [set() for _ in range(num_threads)]
         self.store_lock = Lock()
         self.num_nodes = 0
@@ -299,7 +303,7 @@ class AsyncMCTS:
         # #############################
 
         # Function for defining a simulation runner
-        def runner(idx):
+        def worker_job(idx):
             self.trees[idx].clear()
             start_time = time()
             while (time() - start_time) < max_time:
@@ -313,15 +317,20 @@ class AsyncMCTS:
         ###########################################################
 
         # Create and start the asynchronous workers
+        # workers = []
+        # for i in range(self.num_threads):
+        #     thread = Thread(target=runner, args=(i,))
+        #     thread.start()
+        #     workers.append(thread)
+        #
+        # # Wait for all workers to finish
+        # for thread in workers:
+        #     thread.join()
         workers = []
         for i in range(self.num_threads):
-            thread = Thread(target=runner, args=(i,))
-            thread.start()
-            workers.append(thread)
+            workers.append(self.thread_pool.submit(worker_job, i))
 
-        # Wait for all workers to finish
-        for thread in workers:
-            thread.join()
+        wait_for_threads(workers)
 
         if self.verbose >= 2:
             print("{} Nodes per second".format(self.num_nodes / (time() - episode_start_time)))
