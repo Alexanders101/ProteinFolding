@@ -2,8 +2,45 @@ from multiprocessing import Process, Queue, Array
 from NetworkProcess import NetworkProcess
 from DataProcess import DataProcess
 import numpy as np
+import ctypes
 from time import time
 
+
+class SimulationProcessManager:
+    def __init__(self, num_workers: int, env, network_process: NetworkProcess, database: DataProcess, mcts_config: dict):
+        self.num_workers = num_workers
+        self.env = env
+        self.state_shape = self.env.state_shape
+        self.network_process = network_process
+        self.database = database
+        self.mcts_config = mcts_config
+
+        self.state_buffer_base = Array(ctypes.c_int64, int(np.prod(env.state_shape)), lock=False)
+        self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
+        self.starting_state = self.starting_state.reshape(env.state_shape)
+
+        self.workers = [SimulationProcess(idx, env, network_process, database,
+                                          self.state_buffer_base, self.state_shape, mcts_config)
+                        for idx in range(num_workers)]
+
+    def start(self):
+        for worker in self.workers:
+            worker.start()
+
+    def shutdown(self):
+        for worker in self.workers:
+            worker.shutdown()
+
+    def set_start_state(self, state):
+        self.starting_state[:] = state.copy()
+
+    def simulation(self, clear_tree: bool = True):
+        for worker in self.workers:
+            worker.simulation(clear_tree)
+
+    def results(self):
+        res = [worker.result() for worker in self.workers]
+        return {k: [dic[k] for dic in res] for k in res[0]}
 
 class SimulationProcess(Process):
     def __init__(self, idx: int, env, network_process: NetworkProcess, database: DataProcess,
@@ -27,6 +64,19 @@ class SimulationProcess(Process):
         self.alpha = mcts_config['alpha']
         self.virtual_loss = mcts_config['virtual_loss']
         self.verbose = mcts_config['verbose']
+
+    def shutdown(self):
+        self.input_queue.put(-1)
+
+    def simulation(self, clear_tree: bool = True):
+        if clear_tree:
+            self.input_queue.put(0)
+        else:
+            self.input_queue.put(1)
+
+    def result(self):
+        res = self.output_queue.get()
+        return {'num_nodes': res[0], 'mean_pred_time': res[1], 'mean_run_time': res[2]}
 
     def __simulation(self, idx: int, tree: set):
         simulation_path = []
