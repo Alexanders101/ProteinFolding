@@ -1,10 +1,8 @@
 import tensorflow as tf
 import numpy as np
-from keras.engine.topology import Layer
-from keras.layers.core import Lambda
+from tensorflow import keras
 
-
-class Lattice(Layer):
+class Lattice(keras.layers.Layer):
     def __init__(self, protein_length, **kwargs):
         """
         Keras Layer for transforming protein index strings into a 3d lattice.
@@ -53,7 +51,7 @@ class Lattice(Layer):
                                   validate_indices=False)
 
 
-class LatticeSnake(Layer):
+class LatticeSnake(keras.layers.Layer):
     def __init__(self, protein_length, window_size, **kwargs):
         self.N = protein_length
         self.K = window_size
@@ -117,7 +115,7 @@ class LatticeSnake(Layer):
         regions = regions * float_mask
         return regions
 
-class RemoveMask(Lambda):
+class RemoveMask(keras.layers.Lambda):
     def __init__(self):
         super(RemoveMask, self).__init__((lambda x, mask: x))
         self.supports_masking = True
@@ -125,7 +123,7 @@ class RemoveMask(Lambda):
     def compute_mask(self, input, input_mask=None):
         return None
 
-class BooleanMask(Layer):
+class BooleanMask(keras.layers.Layer):
     def __init__(self, **kwargs):
         super(BooleanMask, self).__init__(**kwargs)
         self.supports_masking = True

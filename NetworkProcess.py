@@ -1,6 +1,6 @@
 from multiprocessing import Process, Queue, Array, Event
-import keras
 import tensorflow as tf
+from tensorflow import keras
 import ctypes
 import numpy as np
 
@@ -70,6 +70,7 @@ class NetworkProcess(Process):
         self.__initialize_network()
         ids = np.zeros(self.num_workers, dtype=np.uint16)
         input_buffer = self.input_buffer.reshape(self.num_workers * self.num_states, *self.state_shape)
+        max_samples = self.batch_size // self.num_moves
 
         self.__ready_queue.put(True)
         while True:
@@ -78,7 +79,7 @@ class NetworkProcess(Process):
                 break
 
             size = 1
-            while size < self.num_workers and not self.input_queue.empty():
+            while size < max_samples and not self.input_queue.empty():
                 ids[size] = self.input_queue.get()
                 size += 1
 
