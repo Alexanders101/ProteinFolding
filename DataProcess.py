@@ -1,7 +1,7 @@
 import numpy as np
 import ctypes
 
-from multiprocessing import Process, Queue, Array
+from multiprocessing import Process, Queue, Array, Event
 from concurrent.futures import ThreadPoolExecutor
 
 class DataProcess(Process):
@@ -15,7 +15,7 @@ class DataProcess(Process):
         self.num_action_threads = num_action_threads
 
         self.input_queue = Queue()
-        self.output_queue = [Queue(1) for _ in range(num_workers)]
+        self.output_queue = [Event() for _ in range(num_workers)]
 
         # Output Buffer numpy array 0: N, 1: W, 2: Q, 3: V
         self.__output_buffer_base = Array(ctypes.c_float, int(num_workers * num_moves * 4), lock=False)
@@ -29,9 +29,10 @@ class DataProcess(Process):
         self.input_queue.put((0, 0, key, 0, 0))
 
     def get(self, idx, key):
+        self.output_queue[idx].clear()
         self.input_queue.put((idx, 1, key, 0, 0))
 
-        self.output_queue[idx].get()
+        self.output_queue[idx].wait()
         return self.output_buffer[idx]
 
     def backup(self, key, action, last_value):
@@ -52,14 +53,8 @@ class DataProcess(Process):
             self.data[key] = np.zeros((4, self.num_moves), dtype=np.float32)
 
     def __get(self, key, idx):
-        success = True
-
-        try:
-            self.output_buffer[idx, :, :] = self.data[key][:]
-        except KeyError:
-            success = False
-
-        self.output_queue[idx].put(success)
+        self.output_buffer[idx, :, :] = self.data[key][:]
+        self.output_queue[idx].set()
 
     def __backup(self, key, action, last_value):
         store = self.data[key]

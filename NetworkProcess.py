@@ -1,4 +1,4 @@
-from multiprocessing import Process, Queue, Array
+from multiprocessing import Process, Queue, Array, Event
 import keras
 import tensorflow as tf
 import ctypes
@@ -25,7 +25,8 @@ class NetworkProcess(Process):
         self.__ready_queue = Queue(maxsize=1)
 
         self.input_queue = Queue(maxsize=num_workers)
-        self.output_queue = [Queue(1) for _ in range(num_workers)]
+        self.output_queue = [Event() for _ in range(num_workers)]
+        # self.output_queue = [Queue(1) for _ in range(num_workers)]
 
         self.__input_buffer_base = Array(ctypes.c_int64, int(num_workers * num_states * np.prod(state_shape)), lock=False)
         self.input_buffer = np.ctypeslib.as_array(self.__input_buffer_base)
@@ -46,9 +47,10 @@ class NetworkProcess(Process):
 
     def _predict_unsafe(self, idx, states):
         self.input_buffer[idx, :] = states[:]
+        self.output_queue[idx].clear()
         self.input_queue.put_nowait(idx)
 
-        self.output_queue[idx].get()
+        self.output_queue[idx].wait()
         return self.policy_buffer[idx], self.value_buffer[idx]
 
     def shutdown(self):
@@ -93,7 +95,7 @@ class NetworkProcess(Process):
                 self.policy_buffer[idx, :, :] = policy[i, :, :]
                 self.value_buffer[idx, :, :] = value[i, :, :]
 
-                self.output_queue[idx].put(1)
+                self.output_queue[idx].set()
 
             # policy, value = self.model.predict(input_buffer, batch_size=self.batch_size)
             # policy = policy.reshape(self.num_workers, self.num_states, 12)
