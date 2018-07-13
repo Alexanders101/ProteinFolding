@@ -145,15 +145,28 @@ class NPProtein():
         random_string = np.random.randint(1, 3, size=length)
         return self.new_state(random_string)
 
-    def random_moves(self, state, length=None):
+    def random_moves(self, state, length=None, policy=False):
         if length is None:
             length = self.max_length
+        if policy:
+            choices = np.zeros(length-1)
+            big_state = np.zeros((state.shape[1], state.shape[0], state.shape[1]))
         for x in range(length-1):
             potential = list(self.legal(state))
             if not potential:
                 state = self.new_state(state[0,:])
                 return self.random_moves(state, length)
-            state = self.next_state(state, random.choice(potential))
+            choice = random.choice(potential)
+            if policy:
+                choices[x] = choice
+                big_state[x] = state
+            state = self.next_state(state, choice)
+        if policy:
+            big_state[x+1] = state
+            choices = choices.astype(int)
+            one_hot = np.zeros((state.shape[1]-1, 12))
+            one_hot[np.arange(state.shape[1]-1), choices] = 1
+            return big_state, one_hot
         return state
 
     def legal(self, state):
@@ -231,7 +244,7 @@ class NPProtein():
         """
         aa_string = state[0, ]
         lattice = state[2:, ].T
-        num = state[1, 0]
+        num = int(state[1, 0])
         tot_energy = 0
         for i in range(num):
             for j in range(i + 2, num):
