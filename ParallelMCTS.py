@@ -96,7 +96,7 @@ class ParallelMCTS:
         self.database = DataProcess(self.num_moves, num_threads, synchronous=True)
 
         # Set up Network
-        self.network_process = NetworkManager(make_network=make_model,
+        self.network_manager = NetworkManager(make_network=make_model,
                                               state_shape=self.state_shape,
                                               num_moves=self.num_moves,
                                               num_states=self.num_moves + 1,
@@ -106,12 +106,12 @@ class ParallelMCTS:
                                               session_config=session_config)
 
         # Simulation Workers
-        self.workers = SimulationProcessManager(num_threads, env, self.network_process, self.database, self.get_config())
+        self.workers = SimulationProcessManager(num_threads, env, self.network_manager, self.database, self.get_config())
 
         # Start all Processes
         print("Starting Networks")
-        self.network_process.start()
-        self.network_process.wait_until_all_ready()
+        self.network_manager.start()
+        self.network_manager.wait_until_all_ready()
 
         print("Starting Database")
         self.database.start()
@@ -122,7 +122,7 @@ class ParallelMCTS:
 
     def __del__(self):
         self.workers.shutdown()
-        self.network_process.shutdown()
+        self.network_manager.shutdown()
         self.database.shutdown()
 
     def __str__(self):

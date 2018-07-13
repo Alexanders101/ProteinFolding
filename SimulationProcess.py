@@ -7,11 +7,11 @@ from time import time
 
 
 class SimulationProcessManager:
-    def __init__(self, num_workers: int, env, network_process: NetworkManager, database: DataProcess, mcts_config: dict):
+    def __init__(self, num_workers: int, env, network_manager: NetworkManager, database: DataProcess, mcts_config: dict):
         self.num_workers = num_workers
         self.env = env
         self.state_shape = self.env.state_shape
-        self.network_process = network_process
+        self.network_manager = network_manager
         self.database = database
         self.mcts_config = mcts_config
 
@@ -19,7 +19,7 @@ class SimulationProcessManager:
         self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
         self.starting_state = self.starting_state.reshape(env.state_shape)
 
-        self.workers = [SimulationProcess(idx, env, network_process, database,
+        self.workers = [SimulationProcess(idx, env, network_manager, database,
                                           self.state_buffer_base, self.state_shape, mcts_config)
                         for idx in range(num_workers)]
 
@@ -43,14 +43,14 @@ class SimulationProcessManager:
         return {k: [dic[k] for dic in res] for k in res[0]}
 
 class SimulationProcess(Process):
-    def __init__(self, idx: int, env, network_process: NetworkManager, database: DataProcess,
+    def __init__(self, idx: int, env, network_manager: NetworkManager, database: DataProcess,
                  state_buffer_base: Array, state_shape: tuple, mcts_config: dict):
         super(SimulationProcess, self).__init__()
 
         self.idx = idx
         self.env = env
         self.database = database
-        self.network_process = network_process
+        self.network_manager = network_manager
 
         self.starting_state = np.ctypeslib.as_array(state_buffer_base)
         self.starting_state = self.starting_state.reshape(state_shape)
@@ -104,7 +104,7 @@ class SimulationProcess(Process):
         # Create the necessary data for the root node
         # #############################################
         next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
-        policy, values = self.network_process._predict_unsafe(idx, next_states)
+        policy, values = self.network_manager._predict_unsafe(idx, next_states)
         policy = policy[-1]
         values = values[:-1, 0]
 
@@ -169,7 +169,7 @@ class SimulationProcess(Process):
             self.run_time.append(time() - t0)
             t0 = time()
             ###########################################################
-            policy, values = self.network_process._predict_unsafe(idx, next_states)
+            policy, values = self.network_manager._predict_unsafe(idx, next_states)
             ###########################################################
             self.pred_time.append(time() - t0)
             t0 = time()

@@ -26,8 +26,8 @@ def counting_unique_sort(arr, buckets, output):
 
 class NetworkManager(Process):
     def __init__(self, make_network: Callable[[], keras.Model], state_shape: Tuple[int, ...],
-                 num_moves: int, num_states: int, batch_size: int, num_workers: int, num_networks: int,
-                 session_config: tf.ConfigProto = None):
+                 num_moves: int, num_states: int, batch_size: int, num_workers: int, num_networks: int = 1,
+                 train_buffer_size: int = 64, session_config: tf.ConfigProto = None):
         """ Class for managing distributed Tensorflow models and predict / train asynchronously.
 
         Parameters
@@ -41,11 +41,14 @@ class NetworkManager(Process):
         num_states : int
             How many states you plan to feed in at any given time.
         batch_size : int
-            Batch size network uses for prediction / training. This should be a multiple of num_states.
+            Batch size network uses for prediction. This should be a multiple of num_states.
         num_workers : int
             How many asynchronous workers will utilize this class for prediction.
         num_networks : int
             Number of network instances to create.
+        train_buffer_size : int
+            Batch size for training. This will create train buffers for that batch size, do not put more
+            data than that into a buffer.
         session_config : tf.ConfigProto
             Tensorflow session config object.
         """
@@ -57,6 +60,7 @@ class NetworkManager(Process):
         self.num_moves = num_moves
         self.num_states = num_states
         self.batch_size = batch_size
+        self.train_buffer_size = train_buffer_size
         self.num_samples = batch_size // num_states
 
         self.num_workers = num_workers
@@ -66,13 +70,17 @@ class NetworkManager(Process):
         self.input_queue = Queue(maxsize=num_workers)
 
         # Networks will signal to workers once their outputs are in the buffers.
-        self.output_queue = [Event() for _ in range(num_workers)]
+        self.output_ready = [Event() for _ in range(num_workers)]
 
         # Manager will put how many samples the network should process from index buffer.
         self.network_input_queue = [Queue(1) for _ in range(num_networks)]
 
         # Networks will signal to manager when they are ready for a new task.
         self.network_ready = [Event() for _ in range(num_networks)]
+
+        # Networks will signal to master when training has finished.
+        self.training_finished = Event()
+        self.training_finished.set()
 
         # Type quickies
         c_int64 = ctypes.c_int64
@@ -99,7 +107,22 @@ class NetworkManager(Process):
         self.__value_buffer_base = Array(c_float, int(np.prod(value_buffer_shape)), lock=False)
         self.value_buffer = np.ctypeslib.as_array(self.__value_buffer_base).reshape(value_buffer_shape)
 
+        # TRAINING_BUFFER - Master places states for training here.
+        training_buffer_shape = (train_buffer_size, *state_shape)
+        self.__training_buffer_base = Array(c_int64, int(np.prod(training_buffer_shape)), lock=False)
+        self.training_buffer = np.ctypeslib.as_array(self.__training_buffer_base).reshape(training_buffer_shape)
 
+        # POLICY TARGET BUFFER - Master places policy targets for training here.
+        policy_target_buffer_shape = (train_buffer_size, num_moves)
+        self.__policy_target_buffer_base = Array(c_float, int(np.prod(policy_target_buffer_shape)), lock=False)
+        self.policy_target_buffer = np.ctypeslib.as_array(self.__policy_target_buffer_base).reshape(
+            policy_target_buffer_shape)
+
+        # VALUE TARGET BUFFER - Master places value targets for training here.
+        value_target_buffer_shape = (train_buffer_size, 1)
+        self.__value_target_buffer_base = Array(c_float, int(np.prod(value_target_buffer_shape)), lock=False)
+        self.value_target_buffer = np.ctypeslib.as_array(self.__value_target_buffer_base).reshape(
+            value_target_buffer_shape)
 
         # Create Network Subprocesses
         PS_RATIO = 0.5
@@ -117,7 +140,7 @@ class NetworkManager(Process):
                                                 task_index=i, parameter_server=False, cluster_spec=cluster_spec,
                                                 input_queue=self.network_input_queue[i],
                                                 ready_event=self.network_ready[i],
-                                                output_queue=self.output_queue, input_buffer=self.input_buffer,
+                                                output_ready=self.output_ready, input_buffer=self.input_buffer,
                                                 index_buffer=self.index_buffers[i],
                                                 policy_buffer=self.policy_buffer, value_buffer=self.value_buffer)
             network.start()
@@ -127,7 +150,7 @@ class NetworkManager(Process):
         for i in range(num_ps):
             ps = DistributedNetworkProcess(make_network, session_config,
                                            task_index=i, parameter_server=True, cluster_spec=cluster_spec,
-                                           input_queue=None, ready_event=None, output_queue=None, input_buffer=None,
+                                           input_queue=None, ready_event=None, output_ready=None, input_buffer=None,
                                            index_buffer=None, policy_buffer=None, value_buffer=None)
             ps.start()
             self.parameter_servers.append(ps)
@@ -147,11 +170,14 @@ class NetworkManager(Process):
         return result
 
     def predict(self, idx, states):
+        return self._predict_unsafe(idx, states)
+
+    def _predict_unsafe(self, idx, states):
         self.input_buffer[idx, :] = states[:]
-        self.output_queue[idx].clear()
+        self.output_ready[idx].clear()
         self.input_queue.put_nowait(idx)
 
-        self.output_queue[idx].wait()
+        self.output_ready[idx].wait()
         return self.policy_buffer[idx], self.value_buffer[idx]
 
     def shutdown(self):
@@ -212,7 +238,7 @@ class DistributedNetworkConfig:
 class DistributedNetworkProcess(Process):
     def __init__(self, make_network: Callable[[], keras.Model], session_config: tf.ConfigProto,
                  task_index: int, parameter_server: bool, cluster_spec: tf.train.ClusterSpec,
-                 input_queue: Queue, ready_event: Event, output_queue: [Queue],
+                 input_queue: Queue, ready_event: Event, output_ready: [Event],
                  input_buffer: np.ndarray, index_buffer: np.ndarray,
                  policy_buffer: np.ndarray, value_buffer: np.ndarray, **kwargs):
         super(DistributedNetworkProcess, self).__init__()
@@ -227,7 +253,7 @@ class DistributedNetworkProcess(Process):
 
         self.input_queue = input_queue
         self.ready_event = ready_event
-        self.output_queue = output_queue
+        self.output_ready = output_ready
 
         self.input_buffer = input_buffer
         self.index_buffer = index_buffer
@@ -311,7 +337,7 @@ class DistributedNetworkProcess(Process):
 
             input_queue = self.input_queue
             ready_event = self.ready_event
-            output_queue = self.output_queue
+            output_ready = self.output_ready
 
             input_buffer = self.input_buffer
             index_buffer = self.index_buffer
@@ -341,4 +367,74 @@ class DistributedNetworkProcess(Process):
                 value_buffer[idx, :, :] = value_batch[:, :, :]
 
                 for worker in idx:
-                    output_queue[worker].set()
+                    output_ready[worker].set()
+
+class DistributedTrainingProcess(DistributedNetworkProcess):
+    def __init__(self, make_network: Callable[[], keras.Model], session_config: tf.ConfigProto,
+                 task_index: int, cluster_spec: tf.train.ClusterSpec,
+                 input_queue: Queue, ready_event: Event,
+                 training_buffer: np.ndarray, policy_target_buffer: np.ndarray,
+                 value_target_buffer: np.ndarray, **kwargs):
+        super(DistributedTrainingProcess, self).__init__(make_network, session_config, task_index, False, cluster_spec,
+                                                         input_queue, ready_event, None, None, None, None, None, **kwargs)
+
+        self.training_buffer = training_buffer
+        self.policy_target_buffer = policy_target_buffer
+        self.value_target_buffer = value_target_buffer
+
+    def run(self):
+        server = tf.train.Server(self.cluster_spec, job_name="worker", task_index=self.task_index,
+                                 config=self.session_config)
+
+        self.__initialize_network()
+
+        # Add hooks if necessary
+        hooks = None
+        chief_only_hooks = None
+
+        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=False,
+                                               hooks=hooks, chief_only_hooks=chief_only_hooks,
+                                               config=self.session_config,
+                                               save_checkpoint_secs=None, save_checkpoint_steps=None,
+                                               save_summaries_steps=None, save_summaries_secs=None) as sess:
+            keras.backend.set_session(sess)
+
+            while True:
+                size = self.input_queue.get()
+
+            # num_states = self.input_buffer.shape[1]
+            # state_shape = self.input_buffer.shape[2:]
+            #
+            # input_queue = self.input_queue
+            # ready_event = self.ready_event
+            # output_queue = self.output_queue
+            #
+            # input_buffer = self.input_buffer
+            # index_buffer = self.index_buffer
+            # policy_buffer = self.policy_buffer
+            # value_buffer = self.value_buffer
+            #
+            # policy = self.policy
+            # value = self.value
+            # x = self.x
+            # training_phase = self.training_phase
+            # ready_event.set()
+            #
+            # while True:
+            #     size = input_queue.get()
+            #     idx = index_buffer[:size]
+            #
+            #     batch = input_buffer[idx]
+            #     batch = batch.reshape(size * num_states, *state_shape)
+            #
+            #     policy_batch, value_batch = sess.run([policy, value], {x: batch, training_phase: 0})
+            #     ready_event.set()
+            #
+            #     policy_batch = policy_batch.reshape(size, num_states, 12)
+            #     value_batch = value_batch.reshape(size, num_states, 1)
+            #
+            #     policy_buffer[idx, :, :] = policy_batch[:, :, :]
+            #     value_buffer[idx, :, :] = value_batch[:, :, :]
+            #
+            #     for worker in idx:
+            #         output_queue[worker].set()
