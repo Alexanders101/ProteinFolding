@@ -125,6 +125,14 @@ class ParallelMCTS:
         self.network_manager.shutdown()
         self.database.shutdown()
 
+    def shutdown(self):
+        print("Shutting Down Workers")
+        self.workers.shutdown()
+        print("Shutting Down Database")
+        self.database.shutdown()
+        print("Shutting Down Network Manager")
+        self.network_manager.shutdown()
+
     def __str__(self):
         out = []
         out.append("="*50)
