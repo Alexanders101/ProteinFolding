@@ -5,47 +5,107 @@ from Data_prep import read_data, partial_format
 from ProteinNetworkUtils import Lattice, RemoveMask
 
 
-def make_network2(max_aa):
-    inp = keras.layers.Input(shape=(max_aa, 5, 5, 5, 1), dtype=tf.float64)
-    inp1 = keras.layers.Input(shape=(max_aa, 1), dtype=tf.float32)
-    inp2 = keras.layers.Input(shape=(max_aa, 1), dtype=tf.int64)
-    inp2 = keras.layers.Lambda(lambda x: tf.cast(x, tf.bool))(inp2)
+def make_short_network(max_aa, lattice_size=7):
+    inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
 
-    # added these three lines
-    bool_mask = keras.layers.Lambda(lambda x: tf.cast(x, tf.bool))(inp1)
-    aa_length = keras.layers.Lambda(lambda x: tf.count_nonzero(x, axis=1))(bool_mask)
+    # Reshape Inputs
+    acids = keras.layers.Lambda(lambda x: tf.cast(x[:, 0], tf.float32))(inp)
+    mask = keras.layers.Lambda(lambda x: tf.cast(x[:, 1], tf.bool))(inp)
+    aa_length = keras.layers.Lambda(lambda x: tf.count_nonzero(x, axis=1, dtype=tf.int64))(mask)
+    indices = keras.layers.Lambda(lambda x: tf.transpose(x[:, 2:5, :], perm=(0, 2, 1)))(inp)
 
-    inp = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (3, 3, 3), padding="valid"))(inp)
-    inp = keras.layers.TimeDistributed(keras.layers.Conv3D(128, (3, 3, 3), padding="valid"))(inp)
-    inp = keras.layers.Reshape((50, 128), input_shape=(50, 1, 1, 1, 128))(inp)
+    # Construct Lattice and apply convolutions across time axis
+    lattice = LatticeSnake(max_aa, lattice_size)([acids, mask, indices])
 
-    reversed = keras.layers.Lambda(lambda x: tf.reverse_sequence(x[0], x[1], seq_axis=0))([inp, aa_length])
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(16, (3, 3, 3), padding="valid"))(lattice)
+    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    conv = keras.layers.Activation('relu')(conv)
 
-    # switch bidirection with two lstm marked later on.
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (3, 3, 3), padding="valid"))(conv)
+    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    conv = keras.layers.Activation('relu')(conv)
 
-    # forward_lstm and backward_lstm are the two
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(64, (3, 3, 3), padding="valid"))(conv)
+    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    conv = keras.layers.Activation('relu')(conv)
 
-    forward_lstm = keras.layers.LSTM(10, return_sequences=True)(inp)
-    backward_lstm = keras.layers.LSTM(10, return_sequences=True)(reversed)
+    acids = keras.layers.Reshape((max_aa, 1))(acids)
+    conv = keras.layers.Reshape((max_aa, 64))(conv)
+    conv = keras.layers.concatenate([conv, acids], axis=2)
+    reverse = keras.layers.Lambda(lambda x: tf.reverse_sequence(x[0], seq_lengths=tf.cast(x[1], tf.int64), seq_axis=1))([conv, aa_length])
+
+    forward_lstm = keras.layers.LSTM(16, return_sequences=True)(conv)
+    backward_lstm = keras.layers.LSTM(16, return_sequences=True)(reverse)
     bi_lstm = keras.layers.concatenate([forward_lstm, backward_lstm], axis=2)
 
-    masked = keras.layers.Lambda(lambda x: x[0] * tf.cast(x[1], tf.float32))([inp, inp2])
-    masked = keras.layers.Masking()(masked)
-    lstm = keras.layers.LSTM(10, return_sequences=True)(masked)
+    final = keras.layers.Flatten()(bi_lstm)
+    pol_fin = keras.layers.Dense(256, activation='relu')(final)
+    pol_fin = keras.layers.Dense(64, activation='relu')(pol_fin)
+    pol_fin = keras.layers.Dense(12, activation='relu')(pol_fin)
 
-    lstm_comb = keras.layers.concatenate([bi_lstm, lstm], axis=2)
-    lstm_comb_unmask = RemoveMask()(lstm_comb)
-    lstm_comb = keras.layers.LSTM(32)(lstm_comb)
+    final = keras.layers.Dense(256, activation='relu')(final)
+    final = keras.layers.Dense(64, activation='relu')(final)
+    final = keras.layers.Dense(1, activation=None)(final)
 
-    lstm_comb = keras.layers.Reshape((1, 32))(lstm_comb)
-    final = keras.layers.LSTM(32, return_sequences=True)(lstm_comb_unmask)
-    final = keras.layers.Lambda(lambda x: x[:, -5:, :])(final)
+    model = keras.Model(inp, [final, pol_fin])
+    return model
 
-    final_comb = keras.layers.concatenate([lstm_comb, final], axis=1)
-    final_actually = keras.layers.Flatten()(final_comb)
-    total = keras.layers.Dense(128, activation="relu")(final_actually)
-    total = keras.layers.Dense(1, activation=None)(total)
 
-    model = keras.Model(inp, total)
-    model.compile("adam", loss="mse")
+def make_big_network(max_aa, lattice_size=7):
+    inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
+
+    # Reshape Inputs
+    acids = keras.layers.Lambda(lambda x: tf.cast(x[:, 0], tf.float32))(inp)
+    mask = keras.layers.Lambda(lambda x: tf.cast(x[:, 1], tf.bool))(inp)
+    indices = keras.layers.Lambda(lambda x: tf.transpose(x[:, 2:5, :], perm=(0, 2, 1)))(inp)
+
+    # Construct Lattice and apply convolutions across time axis
+    lattice = LatticeSnake(max_aa, lattice_size)([acids, mask, indices])
+
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(16, (3, 3, 3)))(lattice)
+    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    conv = keras.layers.Activation('relu')(conv)
+
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (3, 3, 3)))(conv)
+    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    conv = keras.layers.Activation('relu')(conv)
+
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(64, (3, 3, 3)))(conv)
+    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    conv = keras.layers.Activation('relu')(conv)
+
+    conv = keras.layers.Reshape((max_aa, 64))(conv)
+
+    # Apply masked LSTM across lattice features
+    conv_lstm = BooleanMask()([conv, mask])
+    conv_lstm = keras.layers.LSTM(64, return_sequences=True)(conv_lstm)
+
+    # Apply unmasked BiDirectional LSTM across protein string
+    bi_lstm = keras.layers.Reshape((max_aa, 1))(acids)
+    bi_lstm = keras.layers.Bidirectional(keras.layers.LSTM(16, return_sequences=True))(bi_lstm)
+    bi_lstm = keras.layers.Bidirectional(keras.layers.LSTM(32, return_sequences=True))(bi_lstm)
+
+    # Combine the two feature strings
+    combined = keras.layers.concatenate([bi_lstm, conv_lstm], axis=2)
+
+    # Apply Masked LSTM and extract final timestep
+    combined_masked_lstm = keras.layers.LSTM(128)(combined)
+    combined_masked_lstm = keras.layers.Reshape((1, 128))(combined_masked_lstm)
+
+    # Apply unmasked LSTM and extract last 5 timesteps
+    combined_unmasked_lstm = RemoveMask()(combined)
+    combined_unmasked_lstm = keras.layers.LSTM(128, return_sequences=True)(combined_unmasked_lstm)
+    combined_unmasked_lstm = keras.layers.Lambda(lambda x: x[:, -5:, :])(combined_unmasked_lstm)
+
+    final = keras.layers.concatenate([combined_masked_lstm, combined_unmasked_lstm], axis=1)
+    final = keras.layers.Flatten()(final)
+    pol_fin = keras.layers.Dense(256, activation='relu')(final)
+    pol_fin = keras.layers.Dense(64, activation='relu')(pol_fin)
+    pol_fin = keras.layers.Dense(12, activation='relu')(pol_fin)
+
+    final = keras.layers.Dense(256, activation='relu')(final)
+    final = keras.layers.Dense(64, activation='relu')(final)
+    final = keras.layers.Dense(1, activation=None)(final)
+
+    model = keras.Model(inp, [pol_fin, final])
     return model

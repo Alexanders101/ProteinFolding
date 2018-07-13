@@ -1,4 +1,4 @@
-from Lattice2 import Lattice2
+import ProteinEnv
 
 import numpy as np
 
@@ -6,34 +6,28 @@ import csv
 
 import h5py
 
-max_size = 25 # Max size of the Lattice from the origin(0, 0, 0) to the edge in any direction.
-sample_size = 50000 # Number of training examples to make
-max_aa = 40 # Max length of amino acids
+
+sample_size = 10000 # Number of training examples to make
+max_aa = 50 # Max length of amino acids
 directions = False # Boolean to include a direction which indicates where the previous
                     # amino acid was located relative to the current one.
 
-file_store = 'small_data_res.h5'
+file_store = 'partial_fold_training.h5'
+
 
 with h5py.File(file_store, 'w') as h5file:
 
-    h5file.create_dataset("Data", shape=(sample_size, max_aa, 4))
-    h5file.create_dataset("response", shape=(sample_size,))
-    h5file.create_dataset("size", shape=(sample_size,))
-    h5file.create_dataset("max_size", shape=(1,))
-    if directions:
-        h5file.create_dataset("direction", shape=(sample_size, max_aa))
-    h5file["max_size"][0] = max_size
+    h5file.create_dataset("Data", shape=(sample_size*(max_aa-1), 5, max_aa))
+    h5file.create_dataset("response", shape=(sample_size*(max_aa-1),))
+    h5file.create_dataset("policy", shape=(sample_size*(max_aa-1), 12))
+    start = ProteinEnv.NPProtein(max_aa)
     for x in np.arange(sample_size):
-        temp = Lattice2(int(np.random.choice(np.arange(5, max_aa), size=1)), 3, max_size=max_size)
-        results = temp.make_rand()
-        together = np.zeros((max_aa, 4))
-        together[:temp.size,:] = np.reshape(np.concatenate((np.reshape(temp.aa_string, (temp.size, 1)), temp.lattice), axis=1), (temp.size, 4))
-        h5file["Data"][x,:,:] = together
-        h5file["response"][x] = results
-        h5file["size"][x] = temp.size
-        if directions:
-            use = mp.zeros(max_aa)
-            use[:temp.size-1] = temp.directions
-            h5file["direction"][x, :] = use
+        state = start.random_state()
+        big_state, policy = start.random_moves(state, policy=True)
+        energy = start.reward(big_state[-1])
+        response = np.repeat(energy, max_aa-1)
+        h5file["Data"][x*(max_aa-1):(x+1)*(max_aa-1)] = big_state[:-1]
+        h5file["response"][x*(max_aa-1):(x+1)*(max_aa-1)] = start.reward(state)
+        h5file["policy"][x*(max_aa-1):(x+1)*(max_aa-1)] = policy
         if x%1000==0:
             print(x)
