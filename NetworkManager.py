@@ -9,7 +9,7 @@ import os
 import signal
 
 
-@jit("void(int16[::1], int16[::1], int16[::1])", nopython=True)
+@jit("void(int64[::1], int64[::1], int64[::1])", nopython=True)
 def counting_unique_sort(arr, buckets, output):
     n = arr.shape[0]
     k = buckets.shape[0]
@@ -84,7 +84,6 @@ class NetworkManager(Process):
 
         # Type quickies
         c_int64 = ctypes.c_int64
-        c_int16 = ctypes.c_int16
         c_float = ctypes.c_float
 
         # INPUT BUFFER - Workers place input states onto here.
@@ -94,7 +93,7 @@ class NetworkManager(Process):
 
         # INDEX BUFFERS - Manager places the indices of network inputs onto here.
         index_buffers_shape = (num_networks, self.num_samples)
-        self.__index_buffers_base = Array(c_int16, int(np.prod(index_buffers_shape)), lock=False)
+        self.__index_buffers_base = Array(c_int64, int(np.prod(index_buffers_shape)), lock=False)
         self.index_buffers = np.ctypeslib.as_array(self.__index_buffers_base).reshape(index_buffers_shape)
 
         # POLICY BUFFER - Networks will place results here and worker can read from here.
@@ -208,8 +207,8 @@ class NetworkManager(Process):
         current_network = 0
 
         # data buffers
-        ids = np.zeros(max_samples, dtype=np.int16)
-        buckets = np.zeros(self.num_workers, dtype=np.int16)
+        ids = np.zeros(max_samples, dtype=np.int64)
+        buckets = np.zeros(self.num_workers, dtype=np.int64)
 
         while True:
             network_ready[current_network].wait()
