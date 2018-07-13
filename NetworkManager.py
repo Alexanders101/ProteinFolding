@@ -1,4 +1,5 @@
 from multiprocessing import Process, Queue, Array, Event
+from DistributedNetworkProcess import DistributedNetworkProcess, DistributedTrainingProcess
 import tensorflow as tf
 from tensorflow import keras
 import ctypes
@@ -66,23 +67,43 @@ class NetworkManager(Process):
         self.num_workers = num_workers
         self.num_networks = num_networks
 
+        # ############################################################################################
+        # Communication Objects
+        # ############################################################################################
+
+        # ############################################################################################
+        # WORKER INPUT OUTPUT
         # Workers will put their worker ID onto this queue once their input is on the input buffer.
+        # Each worker will only put one request on here at a time, so maxsize is safe.
         self.input_queue = Queue(maxsize=num_workers)
 
         # Networks will signal to workers once their outputs are in the buffers.
+        # Each worker gets their own ready event, the must reset it when predicting
+        # and wait for the network to Set it True.
         self.output_ready = [Event() for _ in range(num_workers)]
 
+        # ############################################################################################
+        # NETWORK INPUT OUTPUT
         # Manager will put how many samples the network should process from index buffer.
         self.network_input_queue = [Queue(1) for _ in range(num_networks)]
 
         # Networks will signal to manager when they are ready for a new task.
+        # Manager must clear these once input is ready to predict and wait for a network to be ready before
+        # Placing new data onto input queue.
         self.network_ready = [Event() for _ in range(num_networks)]
+
+        # ############################################################################################
+        # TRAINING INPUT OUTPUT
+        # Master signals to training worker how much data to train on.
+        self.training_input_queue = Queue(maxsize=1)
 
         # Networks will signal to master when training has finished.
         self.training_finished = Event()
         self.training_finished.set()
 
-        # Type quickies
+        # ############################################################################################
+        # Buffers
+        # ############################################################################################
         c_int64 = ctypes.c_int64
         c_float = ctypes.c_float
 
@@ -123,36 +144,54 @@ class NetworkManager(Process):
         self.value_target_buffer = np.ctypeslib.as_array(self.__value_target_buffer_base).reshape(
             value_target_buffer_shape)
 
-        # Create Network Subprocesses
-        PS_RATIO = 0.5
-        START_PORT = 2222
+        # ############################################################################################
+        #  Network Creation
+        # ############################################################################################
+        PS_RATIO = 0.5  # CONSTANT - Ratio of parameter servers to network workers
+        START_PORT = 2222  # CONSTANT - Starting port for making network workers and parameter servers
+
+        # Compute number of parameter servers, with a minimum of 1.
         num_ps = int(PS_RATIO * num_networks)
         num_ps = max(num_ps, 1)
 
+        # Cluster config uses only localhost to maintain multiple tensorflow instances.
         cluster_spec = {"worker": ["localhost:{}".format(START_PORT+i) for i in range(num_networks)],
                         "ps": ["localhost:{}".format(START_PORT+num_networks+i) for i in range(num_ps)]}
         cluster_spec = tf.train.ClusterSpec(cluster_spec)
 
+        # Create Network Workers
         self.networks = []
         for i in range(num_networks):
             network = DistributedNetworkProcess(make_network, session_config,
-                                                task_index=i, parameter_server=False, cluster_spec=cluster_spec,
+                                                task_index=i,
+                                                parameter_server=False,
+                                                cluster_spec=cluster_spec,
                                                 input_queue=self.network_input_queue[i],
                                                 ready_event=self.network_ready[i],
-                                                output_ready=self.output_ready, input_buffer=self.input_buffer,
+                                                output_ready=self.output_ready,
+                                                input_buffer=self.input_buffer,
                                                 index_buffer=self.index_buffers[i],
-                                                policy_buffer=self.policy_buffer, value_buffer=self.value_buffer)
-            network.start()
+                                                policy_buffer=self.policy_buffer,
+                                                value_buffer=self.value_buffer)
             self.networks.append(network)
+            network.start()
 
+        # Create Parameter Servers
         self.parameter_servers = []
         for i in range(num_ps):
             ps = DistributedNetworkProcess(make_network, session_config,
-                                           task_index=i, parameter_server=True, cluster_spec=cluster_spec,
-                                           input_queue=None, ready_event=None, output_ready=None, input_buffer=None,
-                                           index_buffer=None, policy_buffer=None, value_buffer=None)
-            ps.start()
+                                           task_index=i,
+                                           parameter_server=True,
+                                           cluster_spec=cluster_spec,
+                                           input_queue=None,
+                                           ready_event=None,
+                                           output_ready=None,
+                                           input_buffer=None,
+                                           index_buffer=None,
+                                           policy_buffer=None,
+                                           value_buffer=None)
             self.parameter_servers.append(ps)
+            ps.start()
 
     def __del__(self):
         self.shutdown()
@@ -193,9 +232,8 @@ class NetworkManager(Process):
         print("Shutting Down Manager")
         self.input_queue.put(-1)
 
-
     def run(self):
-        # Store Variables locally for fast access
+        # Store Variables locally for faster access
         max_samples = self.num_samples
         num_networks = self.num_networks
 
@@ -204,236 +242,36 @@ class NetworkManager(Process):
         network_input_queue = self.network_input_queue
         index_buffers = self.index_buffers
 
+        # Iterate through the networks as a round robin.
         current_network = 0
 
-        # data buffers
+        # This buffer stores the worker indices when gathering data to predict
         ids = np.zeros(max_samples, dtype=np.int64)
+
+        # This is a constant buffer for performing counting sort on indices.
         buckets = np.zeros(self.num_workers, dtype=np.int64)
 
         while True:
+            # Wait for next network to be ready to predict.
             network_ready[current_network].wait()
+
+            # Get the first index from the queue and kill process if receive -1.
             ids[0] = input_queue.get()
             if ids[0] < 0:
                 break
 
+            # Gather as many requests as possible.
             size = 1
             while size < max_samples and not input_queue.empty():
                 ids[size] = input_queue.get()
                 size += 1
 
+            # Sort request indices for much faster numpy indexing.
+            # Store the sorted indices directly on index buffer.
             counting_unique_sort(ids[:size], buckets, output=index_buffers[current_network, :])
-            
+
+            # Ready network for prediction and place the number of inputs the network must process.
             network_ready[current_network].clear()
             network_input_queue[current_network].put(size)
 
             current_network = (current_network + 1) % num_networks
-
-class DistributedNetworkConfig:
-    def __init__(self, learning_rate=0.01, policy_weight=1.0, tensorboard_log=False, **kwargs):
-        self.learning_rate = learning_rate
-        self.policy_weight = policy_weight
-        self.tensorboard_log = tensorboard_log
-
-class DistributedNetworkProcess(Process):
-    def __init__(self, make_network: Callable[[], keras.Model], session_config: tf.ConfigProto,
-                 task_index: int, parameter_server: bool, cluster_spec: tf.train.ClusterSpec,
-                 input_queue: Queue, ready_event: Event, output_ready: [Event],
-                 input_buffer: np.ndarray, index_buffer: np.ndarray,
-                 policy_buffer: np.ndarray, value_buffer: np.ndarray, **kwargs):
-        super(DistributedNetworkProcess, self).__init__()
-
-        self.make_network = make_network
-        self.session_config = session_config
-        self.network_config = DistributedNetworkConfig(**kwargs)
-
-        self.task_index = task_index
-        self.cluster_spec = cluster_spec
-        self.parameter_server = parameter_server
-
-        self.input_queue = input_queue
-        self.ready_event = ready_event
-        self.output_ready = output_ready
-
-        self.input_buffer = input_buffer
-        self.index_buffer = index_buffer
-        self.policy_buffer = policy_buffer
-        self.value_buffer = value_buffer
-
-    def __initialize_network(self):
-        keras.backend.manual_variable_initialization(True)
-
-        device = "/job:worker/task:{}".format(self.task_index)
-        with tf.device(tf.train.replica_device_setter(worker_device=device, cluster=self.cluster_spec)):
-            self.global_step = tf.train.get_or_create_global_step()
-            self.training_phase = keras.backend.learning_phase()
-
-            with tf.name_scope("Targets"):
-                num_moves = self.policy_buffer.shape[-1]
-                self.policy_target = tf.placeholder(tf.float32, shape=(None, num_moves), name="PolicyTargets")
-                self.value_target = tf.placeholder(tf.float32, shape=(None, 1), name="ValueTargets")
-
-            with tf.name_scope("Network"):
-                self.model = self.make_network()
-
-            self.x = self.model.input
-            self.policy, self.value = self.model.output
-
-            with tf.name_scope("Loss"):
-                with tf.name_scope("ValueLoss"):
-                    value_loss = tf.losses.mean_squared_error(self.value_target, self.value)
-                    self.value_loss = tf.reduce_mean(value_loss)
-
-                with tf.name_scope("PolicyLoss"):
-                    policy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.policy_target,
-                                                                             logits=self.policy)
-                    self.policy_loss = policy_loss
-
-                with tf.name_scope("TotalLoss"):
-                    policy_weight = self.network_config.policy_weight
-                    policy_weight = policy_weight / (policy_weight + 1)
-                    value_weight = 1 - policy_weight
-                    self.total_loss = (policy_weight * self.policy_loss) + (value_weight * self.value_loss)
-
-            with tf.name_scope("Optimizer"):
-                self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.network_config.learning_rate)
-                self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)
-                self.train_op = tf.group(self.train_op, *self.model.updates)
-
-            if self.network_config.tensorboard_log:
-                for layer in self.model.layers:
-                    with tf.name_scope(layer.name):
-                        for weight in layer.weights:
-                            with tf.name_scope(weight.name.split("/")[-1].split(":")[0]):
-                                tf.summary.histogram('histogram', weight)
-
-    def run(self):
-        # Create and start a server for the local task.
-        job_name = "ps" if self.parameter_server else "worker"
-        server = tf.train.Server(self.cluster_spec, job_name=job_name, task_index=self.task_index,
-                                 config=self.session_config)
-
-        # Parameter Server chills here
-        if self.parameter_server:
-            server.join()
-            return
-
-        # The workers continue
-        self.__initialize_network()
-
-        # Add hooks if necessary
-        hooks = None
-        chief_only_hooks = None
-
-        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=self.task_index == 0,
-                                               hooks=hooks, chief_only_hooks=chief_only_hooks,
-                                               config=self.session_config,
-                                               save_checkpoint_secs=None, save_checkpoint_steps=None,
-                                               save_summaries_steps=None, save_summaries_secs=None) as sess:
-            keras.backend.set_session(sess)
-
-            num_states  = self.input_buffer.shape[1]
-            state_shape = self.input_buffer.shape[2:]
-
-            input_queue = self.input_queue
-            ready_event = self.ready_event
-            output_ready = self.output_ready
-
-            input_buffer = self.input_buffer
-            index_buffer = self.index_buffer
-            policy_buffer = self.policy_buffer
-            value_buffer = self.value_buffer
-
-            policy = self.policy
-            value = self.value
-            x = self.x
-            training_phase = self.training_phase
-            ready_event.set()
-
-            while True:
-                size = input_queue.get()
-                idx = index_buffer[:size]
-
-                batch = input_buffer[idx]
-                batch = batch.reshape(size * num_states, *state_shape)
-
-                policy_batch, value_batch = sess.run([policy, value], {x: batch, training_phase: 0})
-                ready_event.set()
-
-                policy_batch = policy_batch.reshape(size, num_states, 12)
-                value_batch = value_batch.reshape(size, num_states, 1)
-
-                policy_buffer[idx, :, :] = policy_batch[:, :, :]
-                value_buffer[idx, :, :] = value_batch[:, :, :]
-
-                for worker in idx:
-                    output_ready[worker].set()
-
-class DistributedTrainingProcess(DistributedNetworkProcess):
-    def __init__(self, make_network: Callable[[], keras.Model], session_config: tf.ConfigProto,
-                 task_index: int, cluster_spec: tf.train.ClusterSpec,
-                 input_queue: Queue, ready_event: Event,
-                 training_buffer: np.ndarray, policy_target_buffer: np.ndarray,
-                 value_target_buffer: np.ndarray, **kwargs):
-        super(DistributedTrainingProcess, self).__init__(make_network, session_config, task_index, False, cluster_spec,
-                                                         input_queue, ready_event, None, None, None, None, None, **kwargs)
-
-        self.training_buffer = training_buffer
-        self.policy_target_buffer = policy_target_buffer
-        self.value_target_buffer = value_target_buffer
-
-    def run(self):
-        server = tf.train.Server(self.cluster_spec, job_name="worker", task_index=self.task_index,
-                                 config=self.session_config)
-
-        self.__initialize_network()
-
-        # Add hooks if necessary
-        hooks = None
-        chief_only_hooks = None
-
-        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=False,
-                                               hooks=hooks, chief_only_hooks=chief_only_hooks,
-                                               config=self.session_config,
-                                               save_checkpoint_secs=None, save_checkpoint_steps=None,
-                                               save_summaries_steps=None, save_summaries_secs=None) as sess:
-            keras.backend.set_session(sess)
-
-            while True:
-                size = self.input_queue.get()
-
-            # num_states = self.input_buffer.shape[1]
-            # state_shape = self.input_buffer.shape[2:]
-            #
-            # input_queue = self.input_queue
-            # ready_event = self.ready_event
-            # output_queue = self.output_queue
-            #
-            # input_buffer = self.input_buffer
-            # index_buffer = self.index_buffer
-            # policy_buffer = self.policy_buffer
-            # value_buffer = self.value_buffer
-            #
-            # policy = self.policy
-            # value = self.value
-            # x = self.x
-            # training_phase = self.training_phase
-            # ready_event.set()
-            #
-            # while True:
-            #     size = input_queue.get()
-            #     idx = index_buffer[:size]
-            #
-            #     batch = input_buffer[idx]
-            #     batch = batch.reshape(size * num_states, *state_shape)
-            #
-            #     policy_batch, value_batch = sess.run([policy, value], {x: batch, training_phase: 0})
-            #     ready_event.set()
-            #
-            #     policy_batch = policy_batch.reshape(size, num_states, 12)
-            #     value_batch = value_batch.reshape(size, num_states, 1)
-            #
-            #     policy_buffer[idx, :, :] = policy_batch[:, :, :]
-            #     value_buffer[idx, :, :] = value_batch[:, :, :]
-            #
-            #     for worker in idx:
-            #         output_queue[worker].set()
