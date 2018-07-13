@@ -220,9 +220,13 @@ class NetworkManager(Process):
             while size < max_samples and not input_queue.empty():
                 ids[size] = input_queue.get()
                 size += 1
-
+            
+            print(ids[:size])
+            print(index_buffers[current_network, :])
             counting_unique_sort(ids[:size], buckets, output=index_buffers[current_network, :])
-
+            print(index_buffers[current_network, :])
+            print("+"*20)
+            
             network_ready[current_network].clear()
             network_input_queue[current_network].put(size)
 
@@ -352,6 +356,7 @@ class DistributedNetworkProcess(Process):
             while True:
                 size = input_queue.get()
                 idx = index_buffer[:size]
+                print("Network {}. Predicting {}".format(self.task_index, idx))
 
                 batch = input_buffer[idx]
                 batch = batch.reshape(size * num_states, *state_shape)

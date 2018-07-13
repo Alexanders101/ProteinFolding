@@ -155,7 +155,7 @@ class NPProtein():
             potential = list(self.legal(state))
             if not potential:
                 state = self.new_state(state[0,:])
-                return self.random_moves(state, length)
+                return self.random_moves(state, length, policy=policy)
             choice = random.choice(potential)
             if policy:
                 choices[x] = choice

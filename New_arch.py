@@ -1,9 +1,9 @@
 import numpy as np
 import tensorflow as tf
-import keras
-from Data_prep import read_data, partial_format
-from ProteinNetworkUtils import Lattice, RemoveMask
 
+from tensorflow import keras
+#from Data_prep import read_data, partial_format
+from ProteinNetworkUtils import Lattice, RemoveMask, BooleanMask, LatticeSnake
 
 def make_short_network(max_aa, lattice_size=7):
     inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
@@ -17,11 +17,11 @@ def make_short_network(max_aa, lattice_size=7):
     # Construct Lattice and apply convolutions across time axis
     lattice = LatticeSnake(max_aa, lattice_size)([acids, mask, indices])
 
-    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(16, (3, 3, 3), padding="valid"))(lattice)
-    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
-    conv = keras.layers.Activation('relu')(conv)
+    #conv = keras.layers.TimeDistributed(keras.layers.Conv3D(16, (3, 3, 3), padding="valid"))(lattice)
+    #conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    #conv = keras.layers.Activation('relu')(conv)
 
-    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (3, 3, 3), padding="valid"))(conv)
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (3, 3, 3), padding="valid"))(lattice)
     conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
     conv = keras.layers.Activation('relu')(conv)
 
@@ -62,11 +62,11 @@ def make_big_network(max_aa, lattice_size=7):
     # Construct Lattice and apply convolutions across time axis
     lattice = LatticeSnake(max_aa, lattice_size)([acids, mask, indices])
 
-    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(16, (3, 3, 3)))(lattice)
-    conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
-    conv = keras.layers.Activation('relu')(conv)
+    #conv = keras.layers.TimeDistributed(keras.layers.Conv3D(16, (3, 3, 3)))(lattice)
+    #conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    #conv = keras.layers.Activation('relu')(conv)
 
-    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (3, 3, 3)))(conv)
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (3, 3, 3)))(lattice)
     conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
     conv = keras.layers.Activation('relu')(conv)
 
@@ -109,3 +109,7 @@ def make_big_network(max_aa, lattice_size=7):
 
     model = keras.Model(inp, [pol_fin, final])
     return model
+
+
+small = make_short_network(50)
+small.load_weights('short_network_07.13_epoch0.h5')

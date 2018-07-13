@@ -7,7 +7,7 @@ import csv
 import h5py
 
 
-sample_size = 10000 # Number of training examples to make
+sample_size = 100000 # Number of training examples to make
 max_aa = 50 # Max length of amino acids
 directions = False # Boolean to include a direction which indicates where the previous
                     # amino acid was located relative to the current one.
