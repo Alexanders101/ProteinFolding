@@ -3,7 +3,6 @@ import tensorflow as tf
 from tensorflow import keras
 import ctypes
 import numpy as np
-from time import time
 
 class NetworkProcess(Process):
     def __init__(self, make_model, state_shape, num_moves, num_states=1, num_workers=1, batch_size=None,
@@ -88,12 +87,9 @@ class NetworkProcess(Process):
             batch = self.input_buffer[sorted_idx]
             batch = batch.reshape(size * self.num_states, *self.state_shape)
 
-            t0 = time()
             policy, value = self.model.predict(batch, batch_size=self.batch_size)
             policy = policy.reshape(size, self.num_states, 12)
             value = value.reshape(size, self.num_states, 1)
-            t1 = time()
-            #print(f"Total Predict Time: {t1 - t0:.4f}")
 
             for i in range(size):
                 idx = sorted_idx[i]

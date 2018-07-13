@@ -203,12 +203,10 @@ class SimulationProcess(Process):
             if command == 0:
                 tree.clear()
             
-            print("Simulation {} Start".format(idx))
             start_time = time()
             while (time() - start_time) < self.calculation_time:
                 self.__simulation(idx, tree)
             
-            print("Simulation {} Done".format(idx))
             self.output_num_nodes.value = self.num_nodes
             self.output_pred_time.value = np.mean(self.pred_time)
             self.output_run_time.value = np.mean(self.run_time)
