@@ -19,11 +19,10 @@ path to it. Ideally, for 1.0, implement a full node-based virtual loss.
 0.8: Base implementation. Need to implement virtual loss.
 
 """
-from NetworkProcess import NetworkProcess
+# from NetworkProcess import NetworkProcess
+from NetworkManager import NetworkManager
 from DataProcess import DataProcess
 from SimulationProcess import SimulationProcessManager
-from multiprocessing import Array
-import ctypes
 from time import time
 
 import numpy as np
@@ -97,20 +96,27 @@ class ParallelMCTS:
         self.database = DataProcess(self.num_moves, num_threads, synchronous=True)
 
         # Set up Network
-        self.network_process = NetworkProcess(make_model=make_model,
+        self.network_process = NetworkManager(make_network=make_model,
                                               state_shape=self.state_shape,
                                               num_moves=self.num_moves,
                                               num_states=self.num_moves + 1,
                                               num_workers=num_threads,
                                               batch_size=self.batch_size,
+                                              num_networks=4,
                                               session_config=session_config)
 
         # Simulation Workers
         self.workers = SimulationProcessManager(num_threads, env, self.network_process, self.database, self.get_config())
 
         # Start all Processes
+        print("Starting Networks")
         self.network_process.start()
+        self.network_process.wait_until_all_ready()
+
+        print("Starting Database")
         self.database.start()
+
+        print("Starting Workers")
         self.workers.start()
 
 

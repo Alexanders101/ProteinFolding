@@ -1,5 +1,5 @@
 from multiprocessing import Process, Queue, Array, Event, Value
-from NetworkProcess import NetworkProcess
+from NetworkManager import NetworkManager
 from DataProcess import DataProcess
 import numpy as np
 import ctypes
@@ -7,7 +7,7 @@ from time import time
 
 
 class SimulationProcessManager:
-    def __init__(self, num_workers: int, env, network_process: NetworkProcess, database: DataProcess, mcts_config: dict):
+    def __init__(self, num_workers: int, env, network_process: NetworkManager, database: DataProcess, mcts_config: dict):
         self.num_workers = num_workers
         self.env = env
         self.state_shape = self.env.state_shape
@@ -43,7 +43,7 @@ class SimulationProcessManager:
         return {k: [dic[k] for dic in res] for k in res[0]}
 
 class SimulationProcess(Process):
-    def __init__(self, idx: int, env, network_process: NetworkProcess, database: DataProcess,
+    def __init__(self, idx: int, env, network_process: NetworkManager, database: DataProcess,
                  state_buffer_base: Array, state_shape: tuple, mcts_config: dict):
         super(SimulationProcess, self).__init__()
 
