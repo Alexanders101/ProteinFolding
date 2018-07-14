@@ -9,12 +9,17 @@ class DistributedNetworkConfig:
                  policy_weight=1.0,
                  training_batch_size=64,
                  tensorboard_log=False,
-                 log_dir="./logs", **kwargs):
+                 log_dir="./logs",
+                 checkpoint_steps=None,
+                 checkpoint_dir=None,
+                 **kwargs):
         self.learning_rate = learning_rate
         self.policy_weight = policy_weight
         self.training_batch_size = training_batch_size
         self.tensorboard_log = tensorboard_log
         self.log_dir = log_dir
+        self.checkpoint_steps = checkpoint_steps
+        self.checkpoint_dir = checkpoint_dir
 
 class DistributedNetworkProcess(Process):
     def __init__(self, make_network: Callable[[], keras.Model],
@@ -253,7 +258,9 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
         with tf.train.MonitoredTrainingSession(master=server.target, is_chief=False,
                                                hooks=hooks, chief_only_hooks=chief_only_hooks,
                                                config=self.session_config,
-                                               save_checkpoint_secs=None, save_checkpoint_steps=None,
+                                               checkpoint_dir=self.network_config.checkpoint_dir,
+                                               save_checkpoint_secs=None,
+                                               save_checkpoint_steps=self.network_config.checkpoint_steps,
                                                save_summaries_steps=None, save_summaries_secs=None) as sess:
             keras.backend.set_session(sess)
 
@@ -273,27 +280,30 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
             ready_event.set()
 
             while True:
-                size = input_queue.get()
+                command, size = input_queue.get()
+                if command == 1:
+                    self.model.save_weights(size, True)
 
-                train_data = training_buffer[:size]
-                policy_targets = policy_target_buffer[:size]
-                value_targets = value_target_buffer[:size]
+                else:
+                    train_data = training_buffer[:size]
+                    policy_targets = policy_target_buffer[:size]
+                    value_targets = value_target_buffer[:size]
 
-                num_batches = int(np.ceil(size / batch_size))
+                    num_batches = int(np.ceil(size / batch_size))
 
-                for batch in range(num_batches):
-                    low_idx = batch * batch_size
-                    high_idx = (batch + 1) * batch_size
+                    for batch in range(num_batches):
+                        low_idx = batch * batch_size
+                        high_idx = (batch + 1) * batch_size
 
-                    run_list = [self.train_op, self.policy_loss, self.value_loss, self.global_step, self.summary_op]
-                    feed_dict = {self.x: train_data[low_idx:high_idx],
-                                 self.policy_target: policy_targets[low_idx:high_idx],
-                                 self.value_target: value_targets[low_idx:high_idx]}
+                        run_list = [self.train_op, self.policy_loss, self.value_loss, self.global_step, self.summary_op]
+                        feed_dict = {self.x: train_data[low_idx:high_idx],
+                                     self.policy_target: policy_targets[low_idx:high_idx],
+                                     self.value_target: value_targets[low_idx:high_idx]}
 
-                    _, ploss, vloss, step, summaries = sess.run(run_list, feed_dict)
+                        _, ploss, vloss, step, summaries = sess.run(run_list, feed_dict)
 
-                    if self.network_config.tensorboard_log:
-                        writer.add_summary(summaries, step)
+                        if self.network_config.tensorboard_log:
+                            writer.add_summary(summaries, step)
 
                 ready_event.set()
 

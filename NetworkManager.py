@@ -237,7 +237,13 @@ class NetworkManager(Process):
         self.value_target_buffer[:num_samples] = value_targets
 
         self.training_ready.clear()
-        self.training_input_queue.put(num_samples)
+        self.training_input_queue.put((0, num_samples))
+
+    def save_weights(self, weight_file):
+        self.training_ready.wait()
+
+        self.training_ready.clear()
+        self.training_input_queue.put((1, weight_file))
 
     def _predict_unsafe(self, idx, states):
         self.input_buffer[idx, :] = states[:]

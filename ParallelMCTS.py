@@ -21,6 +21,7 @@ path to it. Ideally, for 1.0, implement a full node-based virtual loss.
 """
 # from NetworkProcess import NetworkProcess
 from NetworkManager import NetworkManager
+from DistributedNetworkProcess import DistributedNetworkConfig
 from DataProcess import DataProcess
 from SimulationProcess import SimulationProcessManager
 from time import time
@@ -153,6 +154,13 @@ class ParallelMCTS:
 
     def __repr__(self):
         return self.__str__()
+
+    @staticmethod
+    def NetworkOptions():
+        options = dict(zip(DistributedNetworkConfig.__init__.__code__.co_varnames[1:-1],
+                           DistributedNetworkConfig.__init__.__defaults__))
+        options['train_buffer_size'] = 64
+        return options
 
     def set_config(self, **config_opt):
         """
