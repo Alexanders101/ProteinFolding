@@ -220,8 +220,19 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                  policy_target_buffer: np.ndarray,
                  value_target_buffer: np.ndarray,
                  **kwargs):
-        super(DistributedTrainingProcess, self).__init__(make_network, session_config, task_index, False, cluster_spec,
-                                                         input_queue, ready_event, None, None, None, None, None, **kwargs)
+        super(DistributedTrainingProcess, self).__init__(make_network=make_network,
+                                                         session_config=session_config,
+                                                         task_index=task_index,
+                                                         parameter_server=False,
+                                                         cluster_spec=cluster_spec,
+                                                         input_queue=input_queue,
+                                                         ready_event=ready_event,
+                                                         output_ready=None,
+                                                         input_buffer=None,
+                                                         index_buffer=None,
+                                                         policy_buffer=None,
+                                                         value_buffer=None,
+                                                         **kwargs)
 
         self.training_buffer = training_buffer
         self.policy_target_buffer = policy_target_buffer
@@ -244,5 +255,38 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                                                save_summaries_steps=None, save_summaries_secs=None) as sess:
             keras.backend.set_session(sess)
 
+            input_queue = self.input_queue
+            ready_event = self.ready_event
+
+            training_buffer = self.training_buffer
+            policy_target_buffer = self.policy_target_buffer
+            value_target_buffer = self.value_target_buffer
+
+            batch_size = self.network_config.training_batch_size
+
+            ready_event.set()
+
             while True:
-                size = self.input_queue.get()
+                size = input_queue.get()
+
+                train_data = training_buffer[:size]
+                policy_targets = policy_target_buffer[:size]
+                value_targets = value_target_buffer[:size]
+
+                num_batches = (size // batch_size) + 1
+
+                for batch in range(num_batches):
+                    low_idx = batch * batch_size
+                    high_idx = (batch + 1) * batch_size
+
+                    run_list = [self.train_op, self.policy_loss, self.value_loss, self.global_step]
+                    feed_dict = {self.x: train_data[low_idx:high_idx],
+                                 self.policy_target: policy_targets[low_idx:high_idx],
+                                 self.value_target: value_targets[low_idx:high_idx]}
+
+                    _, ploss, vloss, step = sess.run(run_list, feed_dict)
+
+                    print("Step {}: Value Loss = {} --- Policy Loss = {}".format(step, vloss, ploss))
+
+                ready_event.set()
+

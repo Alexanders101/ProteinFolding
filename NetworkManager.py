@@ -97,9 +97,9 @@ class NetworkManager(Process):
         # Master signals to training worker how much data to train on.
         self.training_input_queue = Queue(maxsize=1)
 
-        # Networks will signal to master when training has finished.
-        self.training_finished = Event()
-        self.training_finished.set()
+        # Training Network will signal to master when training has finished.
+        self.training_ready = Event()
+        self.training_ready.set()
 
         # ############################################################################################
         # Buffers
