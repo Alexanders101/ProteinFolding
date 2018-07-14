@@ -28,7 +28,7 @@ def counting_unique_sort(arr, buckets, output):
 class NetworkManager(Process):
     def __init__(self, make_network: Callable[[], keras.Model], state_shape: Tuple[int, ...],
                  num_moves: int, num_states: int, batch_size: int = None, num_workers: int = 1, num_networks: int = 1,
-                 train_buffer_size: int = 64, session_config: tf.ConfigProto = None):
+                 train_buffer_size: int = 64, session_config: tf.ConfigProto = None, **kwargs):
         """ Class for managing distributed Tensorflow models and predict / train asynchronously.
 
         Parameters
@@ -175,7 +175,8 @@ class NetworkManager(Process):
                                                 input_buffer=self.input_buffer,
                                                 index_buffer=self.index_buffers[i],
                                                 policy_buffer=self.policy_buffer,
-                                                value_buffer=self.value_buffer)
+                                                value_buffer=self.value_buffer,
+                                                **kwargs)
             self.networks.append(network)
             network.start()
 
@@ -192,7 +193,8 @@ class NetworkManager(Process):
                                            input_buffer=None,
                                            index_buffer=None,
                                            policy_buffer=None,
-                                           value_buffer=None)
+                                           value_buffer=None,
+                                           **kwargs)
             self.parameter_servers.append(ps)
             ps.start()
 
@@ -203,7 +205,8 @@ class NetworkManager(Process):
                                                            ready_event=self.training_ready,
                                                            training_buffer=self.training_buffer,
                                                            policy_target_buffer=self.policy_target_buffer,
-                                                           value_target_buffer=self.value_target_buffer)
+                                                           value_target_buffer=self.value_target_buffer,
+                                                           **kwargs)
         self.training_network.start()
 
     def __del__(self):

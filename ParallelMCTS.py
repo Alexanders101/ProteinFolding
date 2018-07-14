@@ -41,7 +41,8 @@ class ParallelMCTS:
         "single_tree": False
     }
 
-    def __init__(self, env, make_model, num_threads=2, session_config=None, **kwargs):
+    def __init__(self, env, make_model, num_threads=2, num_networks=4,
+                 session_config=None, network_manager_options={}, **kwargs):
         """
         Create a Monte Carlo tree search with asynchronous simulation.
 
@@ -102,8 +103,9 @@ class ParallelMCTS:
                                               num_states=self.num_moves + 1,
                                               num_workers=num_threads,
                                               batch_size=self.batch_size,
-                                              num_networks=4,
-                                              session_config=session_config)
+                                              num_networks=num_networks,
+                                              session_config=session_config,
+                                              **network_manager_options)
 
         # Simulation Workers
         self.workers = SimulationProcessManager(num_threads, env, self.network_manager, self.database, self.get_config())
