@@ -90,7 +90,7 @@ class DataProcess(Process):
 
         while True:
             idx, command, key, action, last_value = self.input_queue.get()
-            if idx >= self.num_workers:
+            if idx < 0:
                 break
 
             if self.synchronous:
