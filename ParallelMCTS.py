@@ -199,7 +199,7 @@ class ParallelMCTS:
         policies = []
         values = []
 
-        for game in num_games:
+        for game in range(num_games):
             start_state = self.env.random_state()
             s, pi, r = self.play(start_state)
 
