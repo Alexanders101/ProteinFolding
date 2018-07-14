@@ -253,10 +253,15 @@ class NetworkManager(Process):
                 print("Killing Network Worker: {}".format(i))
                 os.kill(network.pid, signal.SIGKILL)
 
+        if self.training_network.pid:
+            print("Killing Training Network")
+            os.kill(self.training_network.pid, signal.SIGKILL)
+
         for i, ps in enumerate(self.parameter_servers):
             if ps.pid:
                 print("Killing Parameter Server: {}".format(i))
                 os.kill(ps.pid, signal.SIGKILL)
+
 
         print("Shutting Down Manager")
         self.input_queue.put(-1)

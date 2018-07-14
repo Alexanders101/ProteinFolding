@@ -186,6 +186,26 @@ class ParallelMCTS:
         """
         self.database.clear()
 
+    def fit_epoch(self, num_games=1):
+        states = []
+        policies = []
+        values = []
+
+        for game in num_games:
+            start_state = self.env.random_state()
+            s, pi, r = self.play(start_state)
+
+            states.append(s)
+            policies.append(pi)
+            values.append(r)
+
+        states = np.concatenate(states)
+        policies = np.concatenate(policies)
+        values = np.concatenate(values)
+
+        self.network_manager.fit(states, policies, values)
+
+
     def play(self, start_state, clear=True):
         """
         Play a full episode and return training data.
