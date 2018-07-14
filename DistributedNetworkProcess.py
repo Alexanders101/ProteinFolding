@@ -8,11 +8,13 @@ class DistributedNetworkConfig:
     def __init__(self, learning_rate=0.01,
                  policy_weight=1.0,
                  training_batch_size=64,
-                 tensorboard_log=False, **kwargs):
+                 tensorboard_log=False,
+                 log_dir="./logs", **kwargs):
         self.learning_rate = learning_rate
         self.policy_weight = policy_weight
         self.training_batch_size = training_batch_size
         self.tensorboard_log = tensorboard_log
+        self.log_dir = log_dir
 
 class DistributedNetworkProcess(Process):
     def __init__(self, make_network: Callable[[], keras.Model],
@@ -121,7 +123,7 @@ class DistributedNetworkProcess(Process):
                 self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)
                 self.train_op = tf.group(self.train_op, *self.model.updates)
 
-            self.summary_op = None
+            self.summary_op = tf.no_op()
             if self.network_config.tensorboard_log:
                 with tf.name_scope("Loss"):
                     tf.summary.scalar('policy_loss', self.policy_loss)
@@ -255,6 +257,10 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                                                save_summaries_steps=None, save_summaries_secs=None) as sess:
             keras.backend.set_session(sess)
 
+            writer = None
+            if self.network_config.tensorboard_log:
+                writer = tf.summary.FileWriter(self.network_config.log_dir, graph=sess.graph)
+
             input_queue = self.input_queue
             ready_event = self.ready_event
 
@@ -279,14 +285,15 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                     low_idx = batch * batch_size
                     high_idx = (batch + 1) * batch_size
 
-                    run_list = [self.train_op, self.policy_loss, self.value_loss, self.global_step]
+                    run_list = [self.train_op, self.policy_loss, self.value_loss, self.global_step, self.summary_op]
                     feed_dict = {self.x: train_data[low_idx:high_idx],
                                  self.policy_target: policy_targets[low_idx:high_idx],
                                  self.value_target: value_targets[low_idx:high_idx]}
 
-                    _, ploss, vloss, step = sess.run(run_list, feed_dict)
+                    _, ploss, vloss, step, summaries = sess.run(run_list, feed_dict)
 
-                    print("Step {}: Value Loss = {} --- Policy Loss = {}".format(step, vloss, ploss))
+                    if self.network_config.tensorboard_log:
+                        writer.add_summary(summaries, step)
 
                 ready_event.set()
 
