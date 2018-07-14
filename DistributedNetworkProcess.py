@@ -5,17 +5,62 @@ import numpy as np
 from typing import Callable
 
 class DistributedNetworkConfig:
-    def __init__(self, learning_rate=0.01, policy_weight=1.0, tensorboard_log=False, **kwargs):
+    def __init__(self, learning_rate=0.01,
+                 policy_weight=1.0,
+                 training_batch_size=64,
+                 tensorboard_log=False, **kwargs):
         self.learning_rate = learning_rate
         self.policy_weight = policy_weight
+        self.training_batch_size = training_batch_size
         self.tensorboard_log = tensorboard_log
 
 class DistributedNetworkProcess(Process):
-    def __init__(self, make_network: Callable[[], keras.Model], session_config: tf.ConfigProto,
-                 task_index: int, parameter_server: bool, cluster_spec: tf.train.ClusterSpec,
-                 input_queue: Queue, ready_event: Event, output_ready: [Event],
-                 input_buffer: np.ndarray, index_buffer: np.ndarray,
-                 policy_buffer: np.ndarray, value_buffer: np.ndarray, **kwargs):
+    def __init__(self, make_network: Callable[[], keras.Model],
+                 session_config: tf.ConfigProto,
+                 task_index: int,
+                 parameter_server: bool,
+                 cluster_spec: tf.train.ClusterSpec,
+                 input_queue: Queue,
+                 ready_event: Event,
+                 output_ready: [Event],
+                 input_buffer: np.ndarray,
+                 index_buffer: np.ndarray,
+                 policy_buffer: np.ndarray,
+                 value_buffer: np.ndarray,
+                 **kwargs):
+        """ Class for managing a distributed tensorflow model.
+
+        This class creates the TF graphs and the distributed server.
+
+        Parameters
+        ----------
+        make_network : () -> keras.Model
+            Function defining how to construct your network.
+        session_config : tf.ConfigProto
+            Tensorflow session config object.
+        task_index : int
+            Index of this worker on the cluster spec.
+        parameter_server : bool
+            Whether or not this instance is a parameter server.
+        cluster_spec : tf.train.ClusterSpec
+            Cluster Spec containing the paths for all workers in the cluster.
+        input_queue : Queue
+            This networks input queue.
+        ready_event : Event
+            This networks ready event.
+        output_ready : [Event]
+            Output events for all connected workers.
+        input_buffer : np.ndarray
+            Input buffer for storing worker inputs
+        index_buffer : np.ndarray
+            This workers index buffer, this is where it gets prediction requests from.
+        policy_buffer : np.ndarray
+            Output buffer.
+        value_buffer : np.ndarray
+            Output buffer.
+        kwargs
+            Optional arguments that are passed to DistributedNetworkConfig.
+        """
         super(DistributedNetworkProcess, self).__init__()
 
         self.make_network = make_network
@@ -36,6 +81,7 @@ class DistributedNetworkProcess(Process):
         self.value_buffer = value_buffer
 
     def __initialize_network(self):
+        """ Create Tensorflow graph. """
         keras.backend.manual_variable_initialization(True)
 
         device = "/job:worker/task:{}".format(self.task_index)
@@ -75,12 +121,20 @@ class DistributedNetworkProcess(Process):
                 self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)
                 self.train_op = tf.group(self.train_op, *self.model.updates)
 
+            self.summary_op = None
             if self.network_config.tensorboard_log:
+                with tf.name_scope("Loss"):
+                    tf.summary.scalar('policy_loss', self.policy_loss)
+                    tf.summary.scalar('value_loss', self.value_loss)
+                    tf.summary.scalar('total_loss', self.total_loss)
+
                 for layer in self.model.layers:
                     with tf.name_scope(layer.name):
                         for weight in layer.weights:
                             with tf.name_scope(weight.name.split("/")[-1].split(":")[0]):
                                 tf.summary.histogram('histogram', weight)
+
+                self.summary_op = tf.summary.merge_all()
 
     def run(self):
         # Create and start a server for the local task.
@@ -100,6 +154,7 @@ class DistributedNetworkProcess(Process):
         hooks = None
         chief_only_hooks = None
 
+        # Create a monitored session for communication between network workers.
         with tf.train.MonitoredTrainingSession(master=server.target, is_chief=self.task_index == 0,
                                                hooks=hooks, chief_only_hooks=chief_only_hooks,
                                                config=self.session_config,
@@ -107,7 +162,8 @@ class DistributedNetworkProcess(Process):
                                                save_summaries_steps=None, save_summaries_secs=None) as sess:
             keras.backend.set_session(sess)
 
-            num_states  = self.input_buffer.shape[1]
+            # Store Variables locally for faster access
+            num_states = self.input_buffer.shape[1]
             state_shape = self.input_buffer.shape[2:]
 
             input_queue = self.input_queue
@@ -123,33 +179,47 @@ class DistributedNetworkProcess(Process):
             value = self.value
             x = self.x
             training_phase = self.training_phase
+
+            # Ready to predict
             ready_event.set()
 
             while True:
+                # Wait for a new request from manager.
                 size = input_queue.get()
                 idx = index_buffer[:size].copy()
 
+                # Create the appropriate input batch
                 batch = input_buffer[idx]
                 batch = batch.reshape(size * num_states, *state_shape)
 
+                # Predict from the network.
                 policy_batch, value_batch = sess.run([policy, value], {x: batch, training_phase: 0})
+
+                # At this stage, we're done with the input and index buffer. So the manager can place more inputs.
                 ready_event.set()
 
+                # Reshape and output results
                 policy_batch = policy_batch.reshape(size, num_states, 12)
                 value_batch = value_batch.reshape(size, num_states, 1)
 
                 policy_buffer[idx, :, :] = policy_batch[:, :, :]
                 value_buffer[idx, :, :] = value_batch[:, :, :]
 
+                # Signal to workers that their results are ready.
                 for worker in idx:
                     output_ready[worker].set()
 
 class DistributedTrainingProcess(DistributedNetworkProcess):
-    def __init__(self, make_network: Callable[[], keras.Model], session_config: tf.ConfigProto,
-                 task_index: int, cluster_spec: tf.train.ClusterSpec,
-                 input_queue: Queue, ready_event: Event,
-                 training_buffer: np.ndarray, policy_target_buffer: np.ndarray,
-                 value_target_buffer: np.ndarray, **kwargs):
+    def __init__(self, make_network: Callable[[], keras.Model],
+                 session_config: tf.ConfigProto,
+                 task_index: int,
+                 cluster_spec: tf.train.ClusterSpec,
+                 input_queue: Queue,
+                 ready_event: Event,
+                 training_buffer: np.ndarray,
+                 policy_target_buffer: np.ndarray,
+                 value_target_buffer: np.ndarray,
+                 **kwargs):
         super(DistributedTrainingProcess, self).__init__(make_network, session_config, task_index, False, cluster_spec,
                                                          input_queue, ready_event, None, None, None, None, None, **kwargs)
 
