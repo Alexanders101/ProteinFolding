@@ -27,7 +27,7 @@ def counting_unique_sort(arr, buckets, output):
 
 class NetworkManager(Process):
     def __init__(self, make_network: Callable[[], keras.Model], state_shape: Tuple[int, ...],
-                 num_moves: int, num_states: int, batch_size: int, num_workers: int, num_networks: int = 1,
+                 num_moves: int, num_states: int, batch_size: int = None, num_workers: int = 1, num_networks: int = 1,
                  train_buffer_size: int = 64, session_config: tf.ConfigProto = None):
         """ Class for managing distributed Tensorflow models and predict / train asynchronously.
 
@@ -56,6 +56,9 @@ class NetworkManager(Process):
         super(NetworkManager, self).__init__()
         self.make_network = make_network
         self.session_config = session_config
+
+        if batch_size is None:
+            batch_size = (num_workers * num_states) // num_networks
 
         self.state_shape = state_shape
         self.num_moves = num_moves
@@ -155,8 +158,8 @@ class NetworkManager(Process):
         num_ps = max(num_ps, 1)
 
         # Cluster config uses only localhost to maintain multiple tensorflow instances.
-        cluster_spec = {"worker": ["localhost:{}".format(START_PORT+i) for i in range(num_networks)],
-                        "ps": ["localhost:{}".format(START_PORT+num_networks+i) for i in range(num_ps)]}
+        cluster_spec = {"worker": ["localhost:{}".format(START_PORT+i) for i in range(num_networks+1)],
+                        "ps": ["localhost:{}".format(START_PORT+num_networks+i+1) for i in range(num_ps)]}
         cluster_spec = tf.train.ClusterSpec(cluster_spec)
 
         # Create Network Workers
@@ -193,12 +196,23 @@ class NetworkManager(Process):
             self.parameter_servers.append(ps)
             ps.start()
 
+        self.training_network = DistributedTrainingProcess(make_network, session_config,
+                                                           task_index=num_networks,
+                                                           cluster_spec=cluster_spec,
+                                                           input_queue=self.training_input_queue,
+                                                           ready_event=self.training_ready,
+                                                           training_buffer=self.training_buffer,
+                                                           policy_target_buffer=self.policy_target_buffer,
+                                                           value_target_buffer=self.value_target_buffer)
+        self.training_network.start()
+
     def __del__(self):
         self.shutdown()
 
     def wait_until_all_ready(self):
         for ready in self.network_ready:
             ready.wait()
+        self.training_ready.wait()
 
     def ready_workers(self):
         result = []
@@ -209,6 +223,18 @@ class NetworkManager(Process):
 
     def predict(self, idx, states):
         return self._predict_unsafe(idx, states)
+
+    def fit(self, states, policy_targets, value_targets):
+        self.training_ready.wait()
+
+        num_samples = states.shape[0]
+
+        self.training_buffer[:num_samples] = states
+        self.policy_target_buffer[:num_samples] = policy_targets
+        self.value_target_buffer[:num_samples] = value_targets
+
+        self.training_ready.clear()
+        self.training_input_queue.put(num_samples)
 
     def _predict_unsafe(self, idx, states):
         self.input_buffer[idx, :] = states[:]

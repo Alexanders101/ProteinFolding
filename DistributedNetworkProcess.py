@@ -80,7 +80,7 @@ class DistributedNetworkProcess(Process):
         self.policy_buffer = policy_buffer
         self.value_buffer = value_buffer
 
-    def __initialize_network(self):
+    def _initialize_network(self):
         """ Create Tensorflow graph. """
         keras.backend.manual_variable_initialization(True)
 
@@ -108,7 +108,7 @@ class DistributedNetworkProcess(Process):
                 with tf.name_scope("PolicyLoss"):
                     policy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.policy_target,
                                                                              logits=self.policy)
-                    self.policy_loss = policy_loss
+                    self.policy_loss = tf.reduce_mean(policy_loss)
 
                 with tf.name_scope("TotalLoss"):
                     policy_weight = self.network_config.policy_weight
@@ -148,7 +148,7 @@ class DistributedNetworkProcess(Process):
             return
 
         # The workers continue
-        self.__initialize_network()
+        self._initialize_network()
 
         # Add hooks if necessary
         hooks = None
@@ -228,10 +228,10 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                                                          input_queue=input_queue,
                                                          ready_event=ready_event,
                                                          output_ready=None,
-                                                         input_buffer=None,
+                                                         input_buffer=training_buffer,
                                                          index_buffer=None,
-                                                         policy_buffer=None,
-                                                         value_buffer=None,
+                                                         policy_buffer=policy_target_buffer,
+                                                         value_buffer=value_target_buffer,
                                                          **kwargs)
 
         self.training_buffer = training_buffer
@@ -242,7 +242,7 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
         server = tf.train.Server(self.cluster_spec, job_name="worker", task_index=self.task_index,
                                  config=self.session_config)
 
-        self.__initialize_network()
+        self._initialize_network()
 
         # Add hooks if necessary
         hooks = None
@@ -273,7 +273,7 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                 policy_targets = policy_target_buffer[:size]
                 value_targets = value_target_buffer[:size]
 
-                num_batches = (size // batch_size) + 1
+                num_batches = int(np.ceil(size / batch_size))
 
                 for batch in range(num_batches):
                     low_idx = batch * batch_size
