@@ -165,7 +165,8 @@ class DistributedNetworkProcess(Process):
         with tf.train.MonitoredTrainingSession(master=server.target, is_chief=self.task_index == 0,
                                                hooks=hooks, chief_only_hooks=chief_only_hooks,
                                                config=self.session_config,
-                                               save_checkpoint_secs=None, save_checkpoint_steps=None,
+                                               checkpoint_dir=self.network_config.checkpoint_dir,
+                                               save_checkpoint_steps=self.network_config.checkpoint_steps,
                                                save_summaries_steps=None, save_summaries_secs=None) as sess:
             keras.backend.set_session(sess)
 
