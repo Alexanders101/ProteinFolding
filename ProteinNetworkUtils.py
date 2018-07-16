@@ -99,7 +99,8 @@ class LatticeSnake(keras.layers.Layer):
         sparse_idx = tf.concat((masked_idx, masked_inter_idx), axis=0)
         sparse_values = tf.concat((masked_acids, masked_inter_values), axis=0)
 
-        lattice = tf.SparseTensor(sparse_idx, sparse_values, (4 * self.N - 3, 4 * self.N - 3, 4 * self.N - 3))
+        lattice_dim = 4 * self.N - 3 + self.N
+        lattice = tf.SparseTensor(sparse_idx, sparse_values, (lattice_dim, lattice_dim, lattice_dim))
         lattice = tf.sparse_reorder(lattice)
 
         def extractRegion(offset_idx):
