@@ -124,7 +124,7 @@ class DistributedNetworkProcess(Process):
                     self.total_loss = (policy_weight * self.policy_loss) + (value_weight * self.value_loss)
 
             with tf.name_scope("Optimizer"):
-                self.optimizer = tf.train.RMSPropOptimizer(learning_rate=self.network_config.learning_rate)
+                self.optimizer = tf.train.AdamOptimizer(learning_rate=self.network_config.learning_rate)
                 self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)
                 self.train_op = tf.group(self.train_op, *self.model.updates)
 
@@ -299,7 +299,8 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                         run_list = [self.train_op, self.policy_loss, self.value_loss, self.global_step, self.summary_op]
                         feed_dict = {self.x: train_data[low_idx:high_idx],
                                      self.policy_target: policy_targets[low_idx:high_idx],
-                                     self.value_target: value_targets[low_idx:high_idx]}
+                                     self.value_target: value_targets[low_idx:high_idx],
+                                     self.training_phase: 1}
 
                         _, ploss, vloss, step, summaries = sess.run(run_list, feed_dict)
 
