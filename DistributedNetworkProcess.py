@@ -162,7 +162,7 @@ class DistributedNetworkProcess(Process):
         chief_only_hooks = None
 
         # Create a monitored session for communication between network workers.
-        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=self.task_index == 0,
+        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=False,
                                                hooks=hooks, chief_only_hooks=chief_only_hooks,
                                                config=self.session_config,
                                                checkpoint_dir=self.network_config.checkpoint_dir,
@@ -256,7 +256,7 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
         hooks = None
         chief_only_hooks = None
 
-        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=False,
+        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=True,
                                                hooks=hooks, chief_only_hooks=chief_only_hooks,
                                                config=self.session_config,
                                                checkpoint_dir=self.network_config.checkpoint_dir,
