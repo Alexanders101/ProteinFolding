@@ -166,7 +166,7 @@ class NetworkManager(Process):
         self.networks = []
         for i in range(num_networks):
             network = DistributedNetworkProcess(make_network, session_config,
-                                                task_index=i,
+                                                task_index=i+1,
                                                 parameter_server=False,
                                                 cluster_spec=cluster_spec,
                                                 input_queue=self.network_input_queue[i],
@@ -199,7 +199,7 @@ class NetworkManager(Process):
             ps.start()
 
         self.training_network = DistributedTrainingProcess(make_network, session_config,
-                                                           task_index=num_networks,
+                                                           task_index=0,
                                                            cluster_spec=cluster_spec,
                                                            input_queue=self.training_input_queue,
                                                            ready_event=self.training_ready,
