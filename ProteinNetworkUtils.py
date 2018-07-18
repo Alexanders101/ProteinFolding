@@ -143,7 +143,7 @@ class BooleanMask(keras.layers.Layer):
 
 
 
-def eval_energy(state):
+def eval_energy(state, energy_distance=2):
     idx = state[2:]
     mask1 = state[0]-2
     mask2 = state[1]
@@ -156,13 +156,13 @@ def eval_energy(state):
     # casting as a row and column vectors
     row = tf.reshape(na, [-1, 1])
     col = tf.reshape(na, [1, -1])
-    # return pairwise euclidead difference matrix
+    # return pairwise euclidean difference matrix
     result = tf.sqrt(tf.maximum(row - 2 * tf.matmul(idx, idx, False, True) + col, 0.0))
     other = tf.matrix_band_part(result, -1, 0)
     other = tf.matrix_set_diag(other[1:,:-1], np.zeros(other.shape[0]-1))
     result2 = tf.boolean_mask(other, mask[1:], axis=0)
     result3 = tf.boolean_mask(result2, mask[:-1], axis=1)
-    final1 = tf.less_equal(result3, tf.constant(2, tf.float64))
+    final1 = tf.less_equal(result3, tf.constant(energy_distance, tf.float64))
     final2 = tf.greater(result3, tf.constant(0, tf.float64))
     return tf.count_nonzero(final1 & final2)
 
