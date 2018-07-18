@@ -2,6 +2,9 @@ import tensorflow as tf
 import numpy as np
 from tensorflow import keras
 
+lattice_module = tf.load_op_library('./LatticeSnakeOp/LatticeSnake.so')
+
+
 class Lattice(keras.layers.Layer):
     def __init__(self, protein_length, **kwargs):
         """
@@ -52,15 +55,48 @@ class Lattice(keras.layers.Layer):
 
 
 class LatticeSnake(keras.layers.Layer):
+    def __init__(self, protein_length, window_size, num_threads=4, **kwargs):
+        self.protein_length = protein_length
+        self.window_size = window_size
+        self.num_threads=num_threads
+        super(LatticeSnake, self).__init__(**kwargs)
+
+    def call(self, inputs, **kwargs):
+        acids, mask, idx = inputs
+
+        idx = 2 * (idx + (self.protein_length - 1))
+
+        inter_idx = tf.cast(tf.nn.pool(tf.cast(idx, tf.float32), [2], "AVG", "VALID"), tf.int32)
+
+        inter_values = tf.nn.pool(tf.expand_dims(acids, 2), [2], "AVG", "VALID")
+        inter_values = tf.squeeze(inter_values, 2)
+        inter_values = 2 * inter_values + 1
+
+        combined_idx = tf.concat([idx, inter_idx], axis=1)
+        combined_values = tf.concat([acids, inter_values], axis=1)
+        combined_mask = tf.concat([mask, mask[:, 1:]], axis=1)
+
+        def extract_snake(data):
+            return lattice_module.lattice_snake(data[0], data[1], data[2], self.protein_length, self.window_size)
+
+        lattice = tf.map_fn(extract_snake, (combined_values, combined_mask, combined_idx), dtype=tf.float32,
+                            parallel_iterations=self.num_threads, back_prop=False, infer_shape=False)
+        return tf.expand_dims(lattice, -1)
+
+    def compute_output_shape(self, input_shape):
+        batch_size = input_shape[0][0]
+        return batch_size, self.protein_length, self.window_size, self.window_size, self.window_size, 1
+
+class LatticeSnake_old(keras.layers.Layer):
     def __init__(self, protein_length, window_size, **kwargs):
         self.N = protein_length
         self.K = window_size
-        super(LatticeSnake, self).__init__(**kwargs)
+        super(LatticeSnake_old, self).__init__(**kwargs)
 
     def build(self, input_shape):
         self.SIZET = tf.constant(np.repeat(np.int64(self.K), 3), dtype=tf.int64, shape=(3,))
         self.DIFFT = tf.constant(np.repeat(np.int64((self.K - 1) / 2), 3), dtype=tf.int64, shape=(3,))
-        super(LatticeSnake, self).build(input_shape)
+        super(LatticeSnake_old, self).build(input_shape)
 
     def call(self, inputs, **kwargs):
         acids, mask, idx = inputs
