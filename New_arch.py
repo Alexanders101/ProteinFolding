@@ -209,7 +209,7 @@ small.load_weights('short_network_07.13_epoch0.h5')
 def model_not(max_aa):
     inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
     acids = keras.layers.Lambda(lambda x: tf.cast(x[:, 0], tf.float32))(inp)
-    current = tf.expand_dims(keras.layers.Lambda(lambda x: x[:, 1, 0])(inp), 1)
+    current = tf.expand_dims(keras.layers.Lambda(lambda x: x[:, 1, 0]-1)(inp), 1)
 
     num_left = tf.expand_dims(keras.layers.Lambda(lambda x: tf.map_fn(lambda x: max_aa - x[0] - tf.count_nonzero(x[x[0] + 1:] - 1), x))(
             tf.concat([current, tf.cast(acids, tf.int64)], axis=1)), 1)
