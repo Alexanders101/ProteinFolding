@@ -157,7 +157,7 @@ def eval_energy(state):
     row = tf.reshape(na, [-1, 1])
     col = tf.reshape(na, [1, -1])
     # return pairwise euclidead difference matrix
-    result = tf.sqrt(tf.maximum(row - 2 * tf.matmul(keep, keep, False, True) + col, 0.0))
+    result = tf.sqrt(tf.maximum(row - 2 * tf.matmul(idx, idx, False, True) + col, 0.0))
     other = tf.matrix_band_part(result, -1, 0)
     other = tf.matrix_set_diag(other[1:,:-1], np.zeros(other.shape[0]-1))
     result2 = tf.boolean_mask(other, mask[1:], axis=0)

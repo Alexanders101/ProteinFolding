@@ -164,9 +164,9 @@ class NPProtein():
         if policy:
             big_state[x+1] = state
             choices = choices.astype(int)
-            one_hot = np.zeros((state.shape[1]-1, 12))
-            one_hot[np.arange(state.shape[1]-1), choices] = 1
-            return big_state, one_hot
+            one_hot = np.zeros((length-1, 12))
+            one_hot[np.arange(length-1), choices] = 1
+            return state, big_state, one_hot
         return state
 
     def legal(self, state):
@@ -251,3 +251,29 @@ class NPProtein():
                 if aa_string[i] + aa_string[j] == 2 and np.linalg.norm(lattice[i] - lattice[j]) <= self.energy_distance:
                     tot_energy -= 1
         return -tot_energy
+
+    def eval_energy(self, state):
+        # New energy evaluation method which is much faster than reward.
+        idx = state[2:]
+        mask1 = state[0] - 2
+        mask2 = state[0]
+        idx = idx.astype(np.float64)
+        # creating masks to mask out P and 0s.
+        mask1 = mask1.astype(np.bool)
+        mask2 = mask2.astype(np.bool)
+        mask = mask1 & mask2
+        idx = idx.T
+        na = np.sum(idx ** 2, axis=1)
+        # casting as a row and column vectors.
+        row = np.reshape(na, [-1, 1])
+        col = np.reshape(na, [1, -1])
+        # return pairwise euclidead difference matrix.
+        result = np.sqrt(row - 2 * np.matmul(idx, idx.T) + col)
+        result *= np.tri(*result.shape)
+        # masking out the diagonal with offset -1 to prevent comparison of neighboring amino acids.
+        np.fill_diagonal(result[1:, :-1], 0)
+        result2 = result[mask, :]
+        result3 = result2[:, mask]
+        final1 = result3 <= self.energy_distance
+        final2 = result3 > 0
+        return np.sum(final1 & final2)
