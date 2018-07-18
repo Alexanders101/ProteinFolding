@@ -1,5 +1,6 @@
 import numpy as np
 import ctypes
+from typing import Optional, Tuple
 
 from multiprocessing import Process, Queue, Array, Event
 from concurrent.futures import ThreadPoolExecutor
@@ -19,7 +20,8 @@ class DataProcessCommand:
     BothAdd = 9
 
 class DataProcess(Process):
-    def __init__(self, num_moves, num_workers=1, single_tree=False, synchronous=True, num_action_threads=16):
+    def __init__(self, num_moves: int, num_workers: int = 1, single_tree: bool = False,
+                 synchronous: bool = True, num_action_threads: int = 16):
         """ This process manages the MCTS databases and trees used for asynchronous MCTS.
 
         Parameters
@@ -64,7 +66,7 @@ class DataProcess(Process):
     ####################################################################################################
     # User Facing Commands
     ####################################################################################################
-    def done_clear(self, idx):
+    def done_clear(self, idx: int):
         """ Clear this workers done event. This must be done before any of the GET commands are sent.
 
         Parameters
@@ -75,7 +77,7 @@ class DataProcess(Process):
         self.output_queue[idx].clear()
         self.index_error_queue[idx].clear()
 
-    def wait_for_done(self, idx):
+    def wait_for_done(self, idx: int):
         """ Block until this workers GET request has been complete.
 
         Parameters
@@ -96,7 +98,7 @@ class DataProcess(Process):
         command = DataProcessCommand.Add
         self.input_queue.put((0, command, key, 0, 0))
 
-    def get(self, idx, key):
+    def get(self, idx: int, key) -> Optional[np.ndarray]:
         """ Get data associated with a given state. This command Blocks until finished.
 
         Parameters

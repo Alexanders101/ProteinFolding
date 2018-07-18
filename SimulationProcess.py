@@ -70,6 +70,7 @@ class SimulationProcess(Process):
         self.alpha = mcts_config['alpha']
         self.virtual_loss = mcts_config['virtual_loss']
         self.verbose = mcts_config['verbose']
+        self.backup_true_value = mcts_config['backup_true_value']
 
     def shutdown(self):
         self.output_queue.wait()
@@ -95,7 +96,7 @@ class SimulationProcess(Process):
                 'mean_pred_time': self.output_pred_time.value,
                 'mean_run_time': self.output_run_time.value}
 
-    def __simulation(self, idx: int, tree: set):
+    def __simulation(self, idx: int):
         simulation_path = []
         state = self.starting_state.copy()
         state_hash = self.env.hash(self.starting_state)
@@ -119,12 +120,15 @@ class SimulationProcess(Process):
         # #####
         # Evaluate
         # ##########
+
         ###########################################################
         t0 = time()
         ###########################################################
-        while state_hash in tree:
+
+        not_leaf_node, data = self.database.both_get(idx, state_hash)
+        while not_leaf_node:
             # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
-            N, _, Q, V = self.database.get(idx, state_hash)
+            N, _, Q, V = data
             virtual_loss = V * self.virtual_loss
             U = self.C * policy * np.sqrt(N.sum() + 1) / (1 + N)
             A = U + Q - virtual_loss
@@ -162,31 +166,37 @@ class SimulationProcess(Process):
 
             # If we reach the end of the tree, break out.
             if self.env.done(state):
+                if self.backup_true_value:
+                    last_value = self.env.reward(state)
                 break
 
             next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
+
             ###########################################################
             self.run_time.append(time() - t0)
             t0 = time()
             ###########################################################
+
             policy, values = self.network_manager._predict_unsafe(idx, next_states)
+
             ###########################################################
             self.pred_time.append(time() - t0)
             t0 = time()
             ###########################################################
+
             policy = policy[-1]
             values = values[:-1, 0]
+            not_leaf_node, data = self.database.both_get(idx, state_hash)
 
         # Initialize new node
-        self.database.add(state_hash)
-        tree.add(state_hash)
+        self.database.both_add(idx, state_hash)
 
+        # Backup all nodes on path
         for hash, action in simulation_path:
             self.database.backup(hash, action, last_value)
 
     def run(self):
         idx = self.idx
-        tree = set()
 
         self.pred_time = []
         self.run_time = []
@@ -201,11 +211,11 @@ class SimulationProcess(Process):
                 break
 
             if command == 0:
-                tree.clear()
-            
+                self.database.tree_clear(idx)
+
             start_time = time()
             while (time() - start_time) < self.calculation_time:
-                self.__simulation(idx, tree)
+                self.__simulation(idx)
             
             self.output_num_nodes.value = self.num_nodes
             self.output_pred_time.value = np.mean(self.pred_time)

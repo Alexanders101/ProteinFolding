@@ -38,8 +38,8 @@ class ParallelMCTS:
         "alpha": 0.03,
         "virtual_loss": 2.0,
         "verbose": 0,
-        "preinitialize": True,
-        "single_tree": False
+        "single_tree": False,
+        "backup_true_value": False
     }
 
     def __init__(self, env, make_model, num_threads=2, num_networks=4,
@@ -78,10 +78,10 @@ class ParallelMCTS:
             during a given simulation
         verbose : default = 0
             Verbosity of output
-        preinitialize : default = True
-            Whether or not to intialize an expanded node with the original predicted value
         single_tree : default = False
             Whether or not all of the workers share a single tree
+        backup_true_value : default = False
+            Whether or not the backup uses the final predicted value or the final true value
         """
         # Set up environment
         self.env = env
@@ -95,9 +95,9 @@ class ParallelMCTS:
         self.alpha = np.repeat(self.alpha, repeats=self.num_moves)
 
         # Simulation database
-        self.database = DataProcess(self.num_moves, num_threads, synchronous=True)
+        self.database = DataProcess(self.num_moves, num_threads, single_tree=self.single_tree, synchronous=True)
 
-        # Set up Network
+        # Setup Networks
         self.network_manager = NetworkManager(make_network=make_model,
                                               state_shape=self.state_shape,
                                               num_moves=self.num_moves,
@@ -108,8 +108,9 @@ class ParallelMCTS:
                                               session_config=session_config,
                                               **network_manager_options)
 
-        # Simulation Workers
-        self.workers = SimulationProcessManager(num_threads, env, self.network_manager, self.database, self.get_config())
+        # Setup Simulation Workers
+        self.workers = SimulationProcessManager(num_threads, env,
+                                                self.network_manager, self.database, self.get_config())
 
         # Start all Processes
         print("Starting Networks")
