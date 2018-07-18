@@ -155,18 +155,18 @@ def make_big_network(max_aa, lattice_size=7):
 def model_not(max_aa):
     inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
     acids = keras.layers.Lambda(lambda x: tf.cast(x[:, 0], tf.float32))(inp)
-    current = tf.expand_dims(keras.layers.Lambda(lambda x: x[:, 1, 0]-1)(inp), 1)
+    current = keras.layers.Lambda(lambda x: tf.expand_dims(x[:, 1, 0]-1, 1))(inp)
 
     num_left = tf.expand_dims(keras.layers.Lambda(lambda x: tf.map_fn(lambda x: max_aa - x[0] - tf.count_nonzero(x[x[0] + 1:] - 1), x))(
             tf.concat([current, tf.cast(acids, tf.int64)], axis=1)), 1)
 
-    hueristic_energy_left = tf.expand_dims(keras.layers.Lambda(lambda x: tf.gather_nd(distr_48, x))(tf.concat([current, num_left], axis=1)), 1)
+    hueristic_energy_left = keras.layers.Lambda(lambda x: tf.expand_dims(tf.gather_nd(distr_48, x), 1))(tf.concat([current, num_left], axis=1))
 
-    current_energy = tf.expand_dims(keras.layers.Lambda(lambda x: tf.map_fn(eval_energy, x))(inp), 1)
+    current_energy = keras.layers.Lambda(lambda x: tf.expand_dims(tf.map_fn(eval_energy, x), 1))(inp)
     predicted_energy = keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=1))(tf.concat([tf.cast(hueristic_energy_left, tf.int64), current_energy], axis=1))
 
-    policy = keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=1)[:, :12])(inp)
-    policy = keras.layers.Lambda(lambda x: tf.multiply(x, tf.constant(0, dtype=tf.int64)))(policy)
-    policy = keras.layers.Lambda(lambda x: tf.add(x, tf.constant(1, dtype=tf.int64)))(policy)
+    policy = keras.layers.Lambda(lambda x: 0 * tf.reduce_sum(x, axis=1)[:, :12] + 1)(inp)
+    # policy = keras.layers.Lambda(lambda x: tf.multiply(x, tf.constant(0, dtype=tf.int64)))(policy)
+    # policy = keras.layers.Lambda(lambda x: tf.add(x, tf.constant(1, dtype=tf.int64)))(policy)
 
     return keras.Model(inp, [policy, predicted_energy])
