@@ -3,6 +3,8 @@ from NetworkManager import NetworkManager
 from DataProcess import DataProcess
 import numpy as np
 import ctypes
+import os
+import signal
 from time import time
 
 
@@ -23,18 +25,36 @@ class SimulationProcessManager:
                                           self.state_buffer_base, self.state_shape, mcts_config)
                         for idx in range(num_workers)]
 
-    def start(self):
+    def start(self) -> None:
+        """ Start all workers. """
         for worker in self.workers:
             worker.start()
 
-    def shutdown(self):
-        for worker in self.workers:
-            worker.shutdown()
+    def shutdown(self) -> None:
+        """ Kill workers without mercy. """
+        for i, worker in enumerate(self.workers):
+            if worker.pid:
+                print("Killing Worker: {}".format(i))
+                os.kill(worker.pid, signal.SIGKILL)
 
-    def set_start_state(self, state):
+    def set_start_state(self, state: np.ndarray) -> None:
+        """ Set the starting state for the simulation workers.
+
+        Parameters
+        ----------
+        state: np.ndarray
+            Starting state.
+        """
         self.starting_state[:] = state.copy()
 
-    def simulation(self, clear_tree: bool = True):
+    def simulation(self, clear_tree: bool = True) -> None:
+        """ Being a single simulation run for all workers.
+
+        Parameters
+        ----------
+        clear_tree : bool
+            Whether or not to clear the current game tree before starting the simulation.
+        """
         for worker in self.workers:
             worker.simulation(clear_tree)
 

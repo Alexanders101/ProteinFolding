@@ -26,6 +26,9 @@ from DataProcess import DataProcess
 from SimulationProcess import SimulationProcessManager
 from time import time
 
+import tensorflow as tf
+from typing import Callable
+
 import numpy as np
 
 class ParallelMCTS:
@@ -42,22 +45,27 @@ class ParallelMCTS:
         "backup_true_value": False
     }
 
-    def __init__(self, env, make_model, num_threads=2, num_networks=4,
-                 session_config=None, network_manager_options={}, **kwargs):
+    def __init__(self, env, make_model: Callable[[], tf.keras.Model],
+                 num_threads: int =2, num_networks: int = 4, session_config: tf.ConfigProto = None,
+                 network_options: dict = {}, database_options: dict = {}, **kwargs):
         """
         Create a Monte Carlo tree search with asynchronous simulation.
 
         Parameters
         ----------
-        env : BaseCube
-            The cube control object, should derive from BaseCube or have the same interface
-        network : keras.Model
-            A keras model containing the policy and value networks. This networks
-            mapping is: State -> (Policy, Value)
+        env
+            An environment object defining how to plat your game.
+        make_model : () -> keras.Model
+            A function defining how to create your model.
+            The resulting network has the following signature: State -> (Policy, Value)
         session_config : tf.ConfigProto
             A config object for the Tensorflow session created.
+        network_options : dict
+            Extra options to pass to NetworkManager. ParallelMCTS.NetworkOptions() provides all options with defaults.
+        database_options : dict
+            Extra options to pass to DataProcess. ParallelMCTS.DatabaseOptions() provides all options with defaults.
         kwargs
-            See configuration options
+            See configuration options below.
 
         Config Options
         --------------
@@ -95,7 +103,7 @@ class ParallelMCTS:
         self.alpha = np.repeat(self.alpha, repeats=self.num_moves)
 
         # Simulation database
-        self.database = DataProcess(self.num_moves, num_threads, single_tree=self.single_tree, synchronous=True)
+        self.database = DataProcess(self.num_moves, num_threads, single_tree=self.single_tree, **database_options)
 
         # Setup Networks
         self.network_manager = NetworkManager(make_network=make_model,
@@ -106,7 +114,7 @@ class ParallelMCTS:
                                               batch_size=self.batch_size,
                                               num_networks=num_networks,
                                               session_config=session_config,
-                                              **network_manager_options)
+                                              **network_options)
 
         # Setup Simulation Workers
         self.workers = SimulationProcessManager(num_threads, env,
@@ -132,10 +140,10 @@ class ParallelMCTS:
     def shutdown(self):
         print("Shutting Down Workers")
         self.workers.shutdown()
-        print("Shutting Down Database")
-        self.database.shutdown()
         print("Shutting Down Network Manager")
         self.network_manager.shutdown()
+        print("Shutting Down Database")
+        self.database.shutdown()
 
     def __str__(self):
         out = []
@@ -161,6 +169,11 @@ class ParallelMCTS:
         options = dict(zip(DistributedNetworkConfig.__init__.__code__.co_varnames[1:-1],
                            DistributedNetworkConfig.__init__.__defaults__))
         options['train_buffer_size'] = 64
+        return options
+
+    @staticmethod
+    def DatabaseOptions():
+        options = {'synchronous': True, 'num_action_threads': 16}
         return options
 
     def set_config(self, **config_opt):
