@@ -20,10 +20,10 @@ path to it. Ideally, for 1.0, implement a full node-based virtual loss.
 
 """
 # from NetworkProcess import NetworkProcess
-from NetworkManager import NetworkManager
-from DistributedNetworkProcess import DistributedNetworkConfig
-from DataProcess import DataProcess
-from SimulationProcess import SimulationProcessManager
+from ParallelMCTS.NetworkManager import NetworkManager
+from ParallelMCTS.DistributedNetworkProcess import DistributedNetworkConfig
+from ParallelMCTS.DataProcess import DataProcess
+from ParallelMCTS.SimulationProcess import SimulationProcessManager
 from time import time
 
 import tensorflow as tf

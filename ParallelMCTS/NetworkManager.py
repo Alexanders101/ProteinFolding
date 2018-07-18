@@ -1,5 +1,5 @@
 from multiprocessing import Process, Queue, Array, Event
-from DistributedNetworkProcess import DistributedNetworkProcess, DistributedTrainingProcess
+from ParallelMCTS.DistributedNetworkProcess import DistributedNetworkProcess, DistributedTrainingProcess
 import tensorflow as tf
 from tensorflow import keras
 import ctypes

@@ -1,6 +1,6 @@
-from multiprocessing import Process, Queue, Array, Event, Value
-from NetworkManager import NetworkManager
-from DataProcess import DataProcess
+from multiprocessing import Process, Array, Event, Value
+from ParallelMCTS.NetworkManager import NetworkManager
+from ParallelMCTS.DataProcess import DataProcess
 import numpy as np
 import ctypes
 import os
