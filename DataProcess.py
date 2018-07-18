@@ -5,7 +5,9 @@ from typing import Optional, Tuple
 from multiprocessing import Process, Queue, Array, Event
 from concurrent.futures import ThreadPoolExecutor
 
+
 class DataProcessCommand:
+    """ A small class to hold constants for the possible data process commands. """
     Add = 0
     Get = 1
     Backup = 2
@@ -18,6 +20,7 @@ class DataProcessCommand:
 
     BothGet = 8
     BothAdd = 9
+
 
 class DataProcess(Process):
     def __init__(self, num_moves: int, num_workers: int = 1, single_tree: bool = False,
@@ -59,14 +62,14 @@ class DataProcess(Process):
         self.__tree_buffer_base = Array(ctypes.c_bool, int(num_workers), lock=False)
         self.tree_buffer = np.frombuffer(self.__tree_buffer_base, np.bool, count=num_workers)
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """ Shutdown server. """
         self.input_queue.put(-1)
 
     ####################################################################################################
     # User Facing Commands
     ####################################################################################################
-    def done_clear(self, idx: int):
+    def done_clear(self, idx: int) -> None:
         """ Clear this workers done event. This must be done before any of the GET commands are sent.
 
         Parameters
@@ -77,7 +80,7 @@ class DataProcess(Process):
         self.output_queue[idx].clear()
         self.index_error_queue[idx].clear()
 
-    def wait_for_done(self, idx: int):
+    def wait_for_done(self, idx: int) -> None:
         """ Block until this workers GET request has been complete.
 
         Parameters
@@ -87,8 +90,8 @@ class DataProcess(Process):
         """
         self.output_queue[idx].wait()
 
-    def add(self, key):
-        """ Add a state to the database.
+    def add(self, key) -> None:
+        """ Add a state to the database. This function is non-blocking.
 
         Parameters
         ----------
@@ -126,8 +129,8 @@ class DataProcess(Process):
             return None
         return self.output_buffer[idx]
 
-    def backup(self, key, action, last_value):
-        """ Perform a MCTS backup operations for a given state and action.
+    def backup(self, key, action: int, last_value: float) -> None:
+        """ Perform a MCTS backup operations for a given state and action. This function is non-blocking.
 
         Parameters
         ----------
@@ -141,8 +144,8 @@ class DataProcess(Process):
         command = DataProcessCommand.Backup
         self.input_queue.put((0, command, key, action, last_value))
 
-    def visit(self, key, action):
-        """ Increment virtual loss value of a state, action pair.
+    def visit(self, key, action: int) -> None:
+        """ Increment virtual loss value of a state, action pair. This function is non-blocking.
 
         Parameters
         ----------
@@ -154,13 +157,15 @@ class DataProcess(Process):
         command = DataProcessCommand.Visit
         self.input_queue.put((0, command, key, action, 0))
 
-    def clear(self):
-        """ Clear the database. """
+    def clear(self) -> None:
+        """ Clear the database. This function is non-blocking."""
         command = DataProcessCommand.Clear
         self.input_queue.put((0, command, 0, 0, 0))
 
-    def tree_add(self, idx, key):
+    def tree_add(self, idx: int, key) -> None:
         """ Add a new state to this workers tree. If single_tree is on, then it will add the state to the main tree.
+
+        This function is non-blocking.
 
         Parameters
         ----------
@@ -172,8 +177,8 @@ class DataProcess(Process):
         command = DataProcessCommand.TreeAdd
         self.input_queue.put((idx, command, key, 0, 0))
 
-    def tree_get(self, idx, key):
-        """ Get wether or not a given state is in this worker's tree.
+    def tree_get(self, idx: int, key) -> bool:
+        """ Get wether or not a given state is in this worker's tree. This function blocks until the result is done.
 
         Parameters
        ----------
@@ -195,8 +200,8 @@ class DataProcess(Process):
         self.wait_for_done(idx)
         return self.tree_buffer[idx]
 
-    def tree_clear(self, idx):
-        """ Clear this workers
+    def tree_clear(self, idx: int) -> None:
+        """ Clear this worker's tree. This function is non-blocking.
 
         Parameters
         ----------
@@ -206,10 +211,11 @@ class DataProcess(Process):
         command = DataProcessCommand.TreeClear
         self.input_queue.put((idx, command, 0, 0, 0))
 
-    def both_get(self, idx, key):
+    def both_get(self, idx: int, key) -> Tuple[bool, Optional[np.ndarray]]:
         """ Get whether or not the state is in the tree and the data associated with the state.
 
         If no data is available for this state, it will return a None object.
+        This function block until a result is ready.
 
         Parameters
         ----------
@@ -235,14 +241,16 @@ class DataProcess(Process):
         self.input_queue.put((idx, command, key, 0, 0))
 
         self.wait_for_done(idx)
+
         if self.index_error_queue[idx].is_set():
             output = None
         else:
             output = self.output_buffer[idx]
+
         return self.tree_buffer[idx], output
 
-    def both_add(self, idx, key):
-        """ Add a state to both this workers tree and the database.
+    def both_add(self, idx: int, key) -> None:
+        """ Add a state to both this workers tree and the database. This function is non-blocking.
 
         Parameters
         ----------
