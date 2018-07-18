@@ -256,7 +256,7 @@ class NPProtein():
         # New energy evaluation method which is much faster than reward.
         idx = state[2:]
         mask1 = state[0] - 2
-        mask2 = state[0]
+        mask2 = state[1]
         idx = idx.astype(np.float64)
         # creating masks to mask out P and 0s.
         mask1 = mask1.astype(np.bool)

@@ -146,7 +146,7 @@ class BooleanMask(keras.layers.Layer):
 def eval_energy(state):
     idx = state[2:]
     mask1 = state[0]-2
-    mask2 = state[0]
+    mask2 = state[1]
     idx = tf.cast(idx, tf.float64)
     mask1 = tf.cast(mask1, tf.bool)
     mask2 = tf.cast(mask2, tf.bool)
