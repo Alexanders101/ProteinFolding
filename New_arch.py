@@ -165,8 +165,8 @@ def model_not(max_aa):
     current_energy = tf.expand_dims(keras.layers.Lambda(lambda x: tf.map_fn(eval_energy, x))(inp), 1)
     predicted_energy = keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=1))(tf.concat([tf.cast(hueristic_energy_left, tf.int64), current_energy], axis=1))
 
-    policy = tf.reduce_sum(inp, axis=1)[:, :12]
-    policy = tf.multiply(policy, tf.constant(0, dtype=tf.int64))
-    policy = tf.add(policy, tf.constant(1, dtype=tf.int64))
+    policy = keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=1)[:, :12])(inp)
+    policy = keras.layers.Lambda(lambda x: tf.multiply(x, tf.constant(0, dtype=tf.int64)))(policy)
+    policy = keras.layers.Lambda(lambda x: tf.add(x, tf.constant(1, dtype=tf.int64)))(policy)
 
     return keras.Model(inp, [policy, predicted_energy])
