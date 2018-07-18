@@ -12,6 +12,19 @@ import signal
 
 @jit("void(int64[::1], int64[::1], int64[::1])", nopython=True)
 def counting_unique_sort(arr, buckets, output):
+    """ This function performs an integer couting sort.
+
+    Runtime is O(k) where k is the maximum possible value of the input.
+
+    Parameters
+    ----------
+    arr : np.ndarray[int, 1]
+        Input array. The size is (n).
+    buckets : np.ndarray[int, 1]
+        Pre-allocated array of buckets, these must all be zero. The size must be (k).
+    output : np.ndarray[int, 1]
+        Pre-allocated array to place results. Shape must match (n).
+    """
     n = arr.shape[0]
     k = buckets.shape[0]
     for i in range(n):
@@ -212,22 +225,65 @@ class NetworkManager(Process):
     def __del__(self):
         self.shutdown()
 
-    def wait_until_all_ready(self):
+    def wait_until_all_ready(self) -> None:
+        """ Blocks until all networks have initialized. """
         for ready in self.network_ready:
             ready.wait()
         self.training_ready.wait()
 
-    def ready_workers(self):
+    def ready_workers(self) -> [int]:
+        """ Get all the prediction networks that are ready to predict.
+
+        Returns
+        -------
+        [int]
+            List of networks by network id.
+        """
         result = []
         for i, ready in enumerate(self.network_ready):
             if ready.is_set():
                 result.append(i)
         return result
 
-    def predict(self, idx, states):
+    def predict(self, idx: int, states: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """ Schedule a predict request. This will block until the results are ready.
+
+        Parameters
+        ----------
+        idx : int
+            Index of worker.
+        states : np.ndarray[int, [None, ...]]
+            A single batch of states.
+
+        Returns
+        -------
+        policy : np.ndarray[float, [None, num_moves]]
+        value : np.ndarray[float, [None, 1]]
+        """
         return self._predict_unsafe(idx, states)
 
-    def fit(self, states, policy_targets, value_targets):
+    def _predict_unsafe(self, idx, states):
+        self.input_buffer[idx, :] = states[:]
+        self.output_ready[idx].clear()
+        self.input_queue.put_nowait(idx)
+
+        self.output_ready[idx].wait()
+        return self.policy_buffer[idx], self.value_buffer[idx]
+
+    def fit(self, states: np.ndarray, policy_targets: np.ndarray, value_targets: np.ndarray) -> None:
+        """ Schedules a training request.
+
+        This will block if there is training in progress. This will block until the training network is free.
+
+        Parameters
+        ----------
+        states : np.ndarray[int, [None, ...]]
+            A batch of states.
+        policy_targets : np.ndarray[float, [None, num_moves]]
+            Targets for the policy network.
+        value_targets : np.ndarray[float, [None, 1]]
+            Targets for the value network.
+        """
         self.training_ready.wait()
 
         num_samples = states.shape[0]
@@ -239,21 +295,21 @@ class NetworkManager(Process):
         self.training_ready.clear()
         self.training_input_queue.put((0, num_samples))
 
-    def save_weights(self, weight_file):
+    def save_weights(self, weight_file: str) -> None:
+        """ Places a save_weights request. This will save the current weights of the network to a keras hdf5 file.
+
+        Parameters
+        ----------
+        weight_file : str
+            File to store weights to.
+        """
         self.training_ready.wait()
 
         self.training_ready.clear()
         self.training_input_queue.put((1, weight_file))
 
-    def _predict_unsafe(self, idx, states):
-        self.input_buffer[idx, :] = states[:]
-        self.output_ready[idx].clear()
-        self.input_queue.put_nowait(idx)
-
-        self.output_ready[idx].wait()
-        return self.policy_buffer[idx], self.value_buffer[idx]
-
-    def shutdown(self):
+    def shutdown(self) -> None:
+        """ Kill all networks violently. """
         for i, network in enumerate(self.networks):
             if network.pid:
                 print("Killing Network Worker: {}".format(i))
