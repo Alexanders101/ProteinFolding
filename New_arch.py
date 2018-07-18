@@ -152,11 +152,6 @@ def make_big_network(max_aa, lattice_size=7):
     model = keras.Model(inp, [pol_fin, final])
     return model
 
-
-small = make_short_network(50)
-small.load_weights('short_network_07.13_epoch0.h5')
-
-
 def model_not(max_aa):
     inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
     acids = keras.layers.Lambda(lambda x: tf.cast(x[:, 0], tf.float32))(inp)
