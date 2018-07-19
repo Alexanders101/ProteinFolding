@@ -154,7 +154,8 @@ class ParallelMCTS:
             if name == "alpha":
                 value = value[0]
 
-            out.append("{:20} = {:>8} {}".format(name, value, "  --- default" if value == default_value else ""))
+            out.append("{:20} = {:>8} {}".format(name, "None" if value is None else value,
+                                                 "  --- default" if value == default_value else ""))
 
         out.append("="*50 + "\n")
 
