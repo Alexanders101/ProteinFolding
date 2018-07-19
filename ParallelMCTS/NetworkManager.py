@@ -8,6 +8,7 @@ from numba import jit
 from typing import Callable, Tuple
 import os
 import signal
+from time import sleep
 
 
 @jit("void(int64[::1], int64[::1], int64[::1])", nopython=True)
@@ -178,6 +179,7 @@ class NetworkManager(Process):
         # Create Network Workers
         self.networks = []
         for i in range(num_networks):
+            print("Starting Prediction Network: {}".format(i))
             network = DistributedNetworkProcess(make_network, session_config,
                                                 task_index=i+1,
                                                 parameter_server=False,
@@ -196,6 +198,7 @@ class NetworkManager(Process):
         # Create Parameter Servers
         self.parameter_servers = []
         for i in range(num_ps):
+            print("Starting Parameter Server {}".format(i))
             ps = DistributedNetworkProcess(make_network, session_config,
                                            task_index=i,
                                            parameter_server=True,
@@ -211,6 +214,9 @@ class NetworkManager(Process):
             self.parameter_servers.append(ps)
             ps.start()
 
+        sleep(1)
+
+        print("Starting Training Network")
         self.training_network = DistributedTrainingProcess(make_network, session_config,
                                                            task_index=0,
                                                            cluster_spec=cluster_spec,

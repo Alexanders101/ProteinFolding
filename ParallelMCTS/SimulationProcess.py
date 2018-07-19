@@ -32,10 +32,12 @@ class SimulationProcessManager:
 
     def shutdown(self) -> None:
         """ Kill workers without mercy. """
+        print("Killing Worker:", end="")
         for i, worker in enumerate(self.workers):
             if worker.pid:
-                print("Killing Worker: {}".format(i))
+                print(" {}".format(i), end="")
                 os.kill(worker.pid, signal.SIGKILL)
+        print()
 
     def set_start_state(self, state: np.ndarray) -> None:
         """ Set the starting state for the simulation workers.
