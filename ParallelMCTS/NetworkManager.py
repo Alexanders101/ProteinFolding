@@ -215,7 +215,6 @@ class NetworkManager(Process):
             ps.start()
 
         sleep(1)
-
         print("Starting Training Network")
         self.training_network = DistributedTrainingProcess(make_network, session_config,
                                                            task_index=0,
