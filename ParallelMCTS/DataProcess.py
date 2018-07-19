@@ -64,7 +64,7 @@ class DataProcess(Process):
 
     def shutdown(self) -> None:
         """ Shutdown server. """
-        self.input_queue.put(-1)
+        self.input_queue.put((-1, -1, -1, -1, -1))
 
     ####################################################################################################
     # User Facing Commands
