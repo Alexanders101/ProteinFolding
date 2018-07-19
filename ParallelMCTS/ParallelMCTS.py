@@ -1,12 +1,9 @@
 """
 Author: Alexander Shmakov
 Date: 2018-02-13
-Version: 0.9
+Version: 1.1
 
-This module contains an implementation of the distribution Monte Carlo Tree Search Algo.
-
-This version of MCTS has a manager class for making predictions to the network (see PredictorThread),
-and runs the simulation on K different threads simultaneously for each timestep.
+This module contains an implementation of the distribution Monte Carlo Tree Search Algorithm.
 
 Version Notes
 -------------
@@ -19,17 +16,17 @@ path to it. Ideally, for 1.0, implement a full node-based virtual loss.
 0.8: Base implementation. Need to implement virtual loss.
 
 """
-# from NetworkProcess import NetworkProcess
 from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DistributedNetworkProcess import DistributedNetworkConfig
 from ParallelMCTS.DataProcess import DataProcess
 from ParallelMCTS.SimulationProcess import SimulationProcessManager
-from time import time
-
-import tensorflow as tf
-from typing import Callable
+from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
 
 import numpy as np
+import tensorflow as tf
+from typing import Callable, Tuple
+from time import time
+
 
 class ParallelMCTS:
     CONFIG_DEFAULTS = {
@@ -45,7 +42,7 @@ class ParallelMCTS:
         "backup_true_value": False
     }
 
-    def __init__(self, env, make_model: Callable[[], tf.keras.Model],
+    def __init__(self, env: SinglePlayerEnvironment, make_model: Callable[[], tf.keras.Model],
                  num_threads: int =2, num_networks: int = 4, session_config: tf.ConfigProto = None,
                  network_options: dict = {}, database_options: dict = {}, **kwargs):
         """
@@ -53,7 +50,7 @@ class ParallelMCTS:
 
         Parameters
         ----------
-        env
+        env : Subclass of SinglePlayerEnvironment
             An environment object defining how to plat your game.
         make_model : () -> keras.Model
             A function defining how to create your model.
@@ -65,7 +62,7 @@ class ParallelMCTS:
         database_options : dict
             Extra options to pass to DataProcess. ParallelMCTS.DatabaseOptions() provides all options with defaults.
         kwargs
-            See configuration options below.
+            See configuration options below. ParallelMCTS.MCTSOptions() provides all options with defaults.
 
         Config Options
         --------------
@@ -165,22 +162,22 @@ class ParallelMCTS:
         return self.__str__()
 
     @staticmethod
-    def MCTSOptions():
+    def MCTSOptions() -> dict:
         return ParallelMCTS.CONFIG_DEFAULTS.copy()
 
     @staticmethod
-    def NetworkOptions():
+    def NetworkOptions() -> dict:
         options = dict(zip(DistributedNetworkConfig.__init__.__code__.co_varnames[1:-1],
                            DistributedNetworkConfig.__init__.__defaults__))
         options['train_buffer_size'] = 64
         return options
 
     @staticmethod
-    def DatabaseOptions():
+    def DatabaseOptions() -> dict:
         options = {'synchronous': True, 'num_action_threads': 16}
         return options
 
-    def set_config(self, **config_opt):
+    def set_config(self, **config_opt) -> None:
         """
         Create Optional Configuration variables for the Class.
 
@@ -199,20 +196,25 @@ class ParallelMCTS:
             elif name not in self.__dict__:
                 self.__setattr__(name, default)
 
-    def get_config(self):
+    def get_config(self) -> dict:
+        """ Get a dictionary of the current config values. """
         out = {}
         for name in self.CONFIG_DEFAULTS:
             out[name] = self.__getattribute__(name)
         return out
 
-    def clear(self):
-        """
-        Clear all of the simulation memory
-
-        """
+    def clear(self) -> None:
+        """ Clear all of the simulation memory. """
         self.database.clear()
 
-    def fit_epoch(self, num_games=1):
+    def fit_epoch(self, num_games: int = 1) -> None:
+        """ Play a certain number of games and then train on the resulting data.
+
+        Parameters
+        ----------
+        num_games : int
+            Number of games to play for data collection.
+        """
         states = []
         policies = []
         values = []
@@ -231,8 +233,7 @@ class ParallelMCTS:
 
         self.network_manager.fit(states, policies, values)
 
-
-    def play(self, start_state, clear=True):
+    def play(self, start_state: np.ndarray, clear: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Play a full episode and return training data.
 
@@ -291,8 +292,7 @@ class ParallelMCTS:
         # Training Data
         return states[:t], pis[:t], R
 
-
-    def select_moves(self, state):
+    def select_moves(self, state: np.ndarray) -> np.ndarray:
         """
         Calculate a policy from a starting state using MCTS.
 

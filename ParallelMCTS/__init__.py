@@ -1,3 +1,4 @@
 from ParallelMCTS.ParallelMCTS import ParallelMCTS
 from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DataProcess import DataProcess
+from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment

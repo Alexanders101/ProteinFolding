@@ -3,12 +3,13 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import Set, List, Hashable
 
+
 class SinglePlayerEnvironment(ABC):
     """ This is the abstract base class of any environment that is used with ParallelMCTS. The environment consists
     of the following methods, which operate on a state object, in the form of a numpy array, in a memory-free manner.
 
-    All of the information about a state must be stored in a single numpy array. These states are passed around
-    efficient inside of MCTS."""
+    All of the information about a state must be stored in a single numpy array. This allows the states to be passed
+    around efficiently inside of MCTS."""
 
     @property
     @abstractmethod
@@ -20,6 +21,12 @@ class SinglePlayerEnvironment(ABC):
     @abstractmethod
     def state_shape(self) -> List[int]:
         """ This property returns the static shape of any state in the environment. """
+        pass
+
+    @property
+    @abstractmethod
+    def max_length(self) -> int:
+        """ This property returns the maximum number of moves that any game in your environment can last. """
         pass
 
     @abstractmethod
@@ -49,7 +56,7 @@ class SinglePlayerEnvironment(ABC):
         state : numpy array
             The state to act on.
         action : object
-            One of the actions in your moves property.
+            One of the actions from your moves array.
 
         Returns
         -------
@@ -62,7 +69,7 @@ class SinglePlayerEnvironment(ABC):
         """ An extension of the next_state method that allows multiple actions on a single state. The output
         will be the result of applying each action in actions to the state.
 
-        In the most simplest case, it simply loops over the actions and calls next state on each one.
+        In the simplest case, it simply loops over the actions and calls next state on each one.
         If your state allows you to perform many different actions in parallel in some efficient way, then you
         can overwrite this class to provide better performance.
 
