@@ -355,6 +355,9 @@ class DataProcess(Process):
         elif command == 8:
             self.__get_data_and_tree(idx, key)
 
+        elif command == 9:
+            self.__add_data_and_tree(idx, key)
+
     def run(self):
         self.__initialize_data()
 
