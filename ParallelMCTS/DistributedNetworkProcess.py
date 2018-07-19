@@ -1,6 +1,7 @@
 from multiprocessing import Process, Queue, Event
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.contrib import training
 import numpy as np
 from typing import Callable
 
@@ -87,12 +88,16 @@ class DistributedNetworkProcess(Process):
         self.policy_buffer = policy_buffer
         self.value_buffer = value_buffer
 
-    def _initialize_network(self):
+    def _initialize_network(self, training_network=False):
         """ Create Tensorflow graph. """
         keras.backend.manual_variable_initialization(True)
 
-        device = "/job:worker/task:{}".format(self.task_index)
-        with tf.device(tf.train.replica_device_setter(worker_device=device, cluster=self.cluster_spec)):
+        device_name = "/job:worker/task:{}".format(self.task_index)
+        num_ps = self.cluster_spec.num_tasks("ps")
+        strategy = training.GreedyLoadBalancingStrategy(num_tasks=num_ps, load_fn=training.byte_size_load_fn)
+        device = tf.train.replica_device_setter(worker_device=device_name, cluster=self.cluster_spec,
+                                                ps_strategy=strategy)
+        with tf.device(device):
             self.global_step = tf.train.get_or_create_global_step()
             self.training_phase = keras.backend.learning_phase()
 
@@ -107,41 +112,42 @@ class DistributedNetworkProcess(Process):
             self.x = self.model.input
             self.policy, self.value = self.model.output
 
-            with tf.name_scope("Loss"):
-                with tf.name_scope("ValueLoss"):
-                    value_loss = tf.losses.mean_squared_error(self.value_target, self.value)
-                    self.value_loss = tf.reduce_mean(value_loss)
-
-                with tf.name_scope("PolicyLoss"):
-                    policy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.policy_target,
-                                                                             logits=self.policy)
-                    self.policy_loss = tf.reduce_mean(policy_loss)
-
-                with tf.name_scope("TotalLoss"):
-                    policy_weight = self.network_config.policy_weight
-                    policy_weight = policy_weight / (policy_weight + 1)
-                    value_weight = 1 - policy_weight
-                    self.total_loss = (policy_weight * self.policy_loss) + (value_weight * self.value_loss)
-
-            with tf.name_scope("Optimizer"):
-                self.optimizer = tf.train.AdamOptimizer(learning_rate=self.network_config.learning_rate)
-                self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)
-                self.train_op = tf.group(self.train_op, *self.model.updates)
-
-            self.summary_op = tf.no_op()
-            if self.network_config.tensorboard_log:
+            if training_network:
                 with tf.name_scope("Loss"):
-                    tf.summary.scalar('policy_loss', self.policy_loss)
-                    tf.summary.scalar('value_loss', self.value_loss)
-                    tf.summary.scalar('total_loss', self.total_loss)
+                    with tf.name_scope("ValueLoss"):
+                        value_loss = tf.losses.mean_squared_error(self.value_target, self.value)
+                        self.value_loss = tf.reduce_mean(value_loss)
 
-                for layer in self.model.layers:
-                    with tf.name_scope(layer.name):
-                        for weight in layer.weights:
-                            with tf.name_scope(weight.name.split("/")[-1].split(":")[0]):
-                                tf.summary.histogram('histogram', weight)
+                    with tf.name_scope("PolicyLoss"):
+                        policy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.policy_target,
+                                                                                 logits=self.policy)
+                        self.policy_loss = tf.reduce_mean(policy_loss)
 
-                self.summary_op = tf.summary.merge_all()
+                    with tf.name_scope("TotalLoss"):
+                        policy_weight = self.network_config.policy_weight
+                        policy_weight = policy_weight / (policy_weight + 1)
+                        value_weight = 1 - policy_weight
+                        self.total_loss = (policy_weight * self.policy_loss) + (value_weight * self.value_loss)
+
+                with tf.name_scope("Optimizer"):
+                    self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.network_config.learning_rate)
+                    self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)
+                    self.train_op = tf.group(self.train_op, *self.model.updates)
+
+                self.summary_op = tf.no_op()
+                if self.network_config.tensorboard_log:
+                    with tf.name_scope("Loss"):
+                        tf.summary.scalar('policy_loss', self.policy_loss)
+                        tf.summary.scalar('value_loss', self.value_loss)
+                        tf.summary.scalar('total_loss', self.total_loss)
+
+                    for layer in self.model.layers:
+                        with tf.name_scope(layer.name):
+                            for weight in layer.weights:
+                                with tf.name_scope(weight.name.split("/")[-1].split(":")[0]):
+                                    tf.summary.histogram('histogram', weight)
+
+                    self.summary_op = tf.summary.merge_all()
 
     def run(self):
         # Create and start a server for the local task.
@@ -162,7 +168,8 @@ class DistributedNetworkProcess(Process):
         chief_only_hooks = None
 
         # Create a monitored session for communication between network workers.
-        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=False,
+        print(server.target)
+        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=(self.task_index == 0),
                                                hooks=hooks, chief_only_hooks=chief_only_hooks,
                                                config=self.session_config,
                                                checkpoint_dir=self.network_config.checkpoint_dir,
@@ -250,13 +257,14 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
         server = tf.train.Server(self.cluster_spec, job_name="worker", task_index=self.task_index,
                                  config=self.session_config)
 
-        self._initialize_network()
+        self._initialize_network(training_network=True)
 
         # Add hooks if necessary
         hooks = None
         chief_only_hooks = None
 
-        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=True,
+        print(server.target)
+        with tf.train.MonitoredTrainingSession(master=server.target, is_chief=(self.task_index == 0),
                                                hooks=hooks, chief_only_hooks=chief_only_hooks,
                                                config=self.session_config,
                                                checkpoint_dir=self.network_config.checkpoint_dir,
