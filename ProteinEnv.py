@@ -72,11 +72,10 @@ class NPProtein(SinglePlayerEnvironment):
         energy_distance : float
             Distance to evaluate neighboring acids
         """
-        self._moves = np.arange(0, 12)
         self._state_shape = (5, max_length)
 
-        self.directions = np.array([(1, 1, 0), (-1, 1, 0), (1, -1, 0), (-1, -1, 0), (1, 0, 1), (1, 0, -1),
-                                    (-1, 0, 1), (-1, 0, -1), (0, 1, 1), (0, 1, -1), (0, -1, 1), (0, -1, -1)])
+        self.directions = np.array([(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)])
+        self._moves = np.arange(0, len(self.directions))
         self.energy_distance = energy_distance
         self._max_length = max_length
 
@@ -170,7 +169,7 @@ class NPProtein(SinglePlayerEnvironment):
         if policy:
             big_state[x+1] = state
             choices = choices.astype(int)
-            one_hot = np.zeros((length-1, 12))
+            one_hot = np.zeros((length-1, len(self.directions)))
             one_hot[np.arange(length-1), choices] = 1
             return state, big_state, one_hot
         return state
