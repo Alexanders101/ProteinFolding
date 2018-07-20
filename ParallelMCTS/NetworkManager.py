@@ -179,7 +179,6 @@ class NetworkManager(Process):
         # Create Network Workers
         self.networks = []
         for i in range(num_networks):
-            print("Starting Prediction Network: {}".format(i))
             network = DistributedNetworkProcess(make_network, session_config,
                                                 task_index=i+1,
                                                 parameter_server=False,
@@ -193,12 +192,10 @@ class NetworkManager(Process):
                                                 value_buffer=self.value_buffer,
                                                 **kwargs)
             self.networks.append(network)
-            network.start()
 
         # Create Parameter Servers
         self.parameter_servers = []
         for i in range(num_ps):
-            print("Starting Parameter Server {}".format(i))
             ps = DistributedNetworkProcess(make_network, session_config,
                                            task_index=i,
                                            parameter_server=True,
@@ -212,10 +209,8 @@ class NetworkManager(Process):
                                            value_buffer=None,
                                            **kwargs)
             self.parameter_servers.append(ps)
-            ps.start()
 
-        sleep(1)
-        print("Starting Training Network")
+        # Create Training Network.
         self.training_network = DistributedTrainingProcess(make_network, session_config,
                                                            task_index=0,
                                                            cluster_spec=cluster_spec,
@@ -225,10 +220,6 @@ class NetworkManager(Process):
                                                            policy_target_buffer=self.policy_target_buffer,
                                                            value_target_buffer=self.value_target_buffer,
                                                            **kwargs)
-        self.training_network.start()
-
-    def __del__(self):
-        self.shutdown()
 
     def wait_until_all_ready(self) -> None:
         """ Blocks until all networks have initialized. """
@@ -313,6 +304,13 @@ class NetworkManager(Process):
         self.training_ready.clear()
         self.training_input_queue.put((1, weight_file))
 
+    def __enter__(self):
+        self.start()
+        self.wait_until_all_ready()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.shutdown()
+
     def shutdown(self) -> None:
         """ Kill all networks violently. """
         for i, network in enumerate(self.networks):
@@ -329,9 +327,24 @@ class NetworkManager(Process):
                 print("Killing Parameter Server: {}".format(i))
                 os.kill(ps.pid, signal.SIGKILL)
 
-
         print("Shutting Down Manager")
         self.input_queue.put(-1)
+
+    def start(self):
+        for i, network in enumerate(self.networks):
+            print("Starting Prediction Network {}".format(i))
+            network.start()
+
+        for i, ps in enumerate(self.parameter_servers):
+            print("Starting Parameter Server {}".format(i))
+            ps.start()
+
+        print("Starting Training Network.")
+        sleep(1)
+        self.training_network.start()
+
+        print("Starting Network Manager.")
+        super(NetworkManager, self).start()
 
     def run(self):
         # Store Variables locally for faster access

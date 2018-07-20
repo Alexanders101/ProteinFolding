@@ -117,6 +117,7 @@ class ParallelMCTS:
         self.workers = SimulationProcessManager(num_threads, env,
                                                 self.network_manager, self.database, self.get_config())
 
+    def start(self):
         print("Starting Networks")
         self.network_manager.start()
         self.network_manager.wait_until_all_ready()
@@ -136,7 +137,7 @@ class ParallelMCTS:
         self.database.shutdown()
 
     def __enter__(self):
-        pass
+        self.start()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.shutdown()
