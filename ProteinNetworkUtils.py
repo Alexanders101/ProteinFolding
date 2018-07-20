@@ -65,6 +65,7 @@ class LatticeSnake(keras.layers.Layer):
         acids, mask, idx = inputs
 
         idx = 2 * (idx + (self.protein_length - 1))
+        idx = tf.cast(idx, tf.int32)
 
         inter_idx = tf.cast(tf.nn.pool(tf.cast(idx, tf.float32), [2], "AVG", "VALID"), tf.int32)
 
