@@ -47,8 +47,8 @@ public:
         OP_REQUIRES(context, idx_T.shape().dim_size(1) == 3,
                     errors::InvalidArgument("Lattice Snake Indices must be (N, 3)"));
 
-//        OP_REQUIRES(context, idx_T.dim_size(0) == acids_T.dim_size(0) == mask_T.dim_size(0),
-//                    errors::InvalidArgument("All three inputs must have the same timestep dimensions."));
+        OP_REQUIRES(context, idx_T.dim_size(0) == acids_T.dim_size(0) && acids_T.dim_size(0) == mask_T.dim_size(0),
+                    errors::InvalidArgument("All three inputs must have the same timestep dimensions."));
 
         // Cast inputs into Eigen Tensors
         const auto acids = acids_T.flat<float>();
