@@ -80,7 +80,7 @@ class LatticeSnake(keras.layers.Layer):
             return lattice_module.lattice_snake(data[0], data[1], data[2], self.protein_length, self.window_size)
 
         lattice = tf.map_fn(extract_snake, (combined_values, combined_mask, combined_idx), dtype=tf.float32,
-                            parallel_iterations=self.num_threads, back_prop=False, infer_shape=False)
+                            parallel_iterations=self.num_threads, back_prop=False, infer_shape=True)
         return tf.expand_dims(lattice, -1)
 
     def compute_output_shape(self, input_shape):
