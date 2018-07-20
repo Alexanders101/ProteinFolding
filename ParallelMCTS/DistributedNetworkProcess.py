@@ -189,6 +189,8 @@ class DistributedNetworkProcess(Process):
             index_buffer = self.index_buffer
             policy_buffer = self.policy_buffer
             value_buffer = self.value_buffer
+            num_moves = policy_buffer.shape[-1]
+
 
             policy = self.policy
             value = self.value
@@ -214,7 +216,7 @@ class DistributedNetworkProcess(Process):
                 ready_event.set()
 
                 # Reshape and output results
-                policy_batch = policy_batch.reshape(size, num_states, 12)
+                policy_batch = policy_batch.reshape(size, num_states, num_moves)
                 value_batch = value_batch.reshape(size, num_states, 1)
 
                 policy_buffer[idx, :, :] = policy_batch[:, :, :]

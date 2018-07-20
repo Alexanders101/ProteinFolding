@@ -40,7 +40,6 @@ class NetworkProcess(Process):
         self.value_buffer = np.ctypeslib.as_array(self.__value_buffer_base)
         self.value_buffer = self.value_buffer.reshape(num_workers, num_states, 1)
 
-
     def predict(self, idx, states):
         assert self.is_alive(), "Network has not been started or has already been shutdown."
         return self._predict_unsafe(idx, states)
@@ -69,7 +68,6 @@ class NetworkProcess(Process):
     def run(self):
         self.__initialize_network()
         ids = np.zeros(self.num_workers, dtype=np.uint16)
-        input_buffer = self.input_buffer.reshape(self.num_workers * self.num_states, *self.state_shape)
         max_samples = self.batch_size // self.num_moves
 
         self.__ready_queue.put(True)
@@ -97,14 +95,3 @@ class NetworkProcess(Process):
                 self.value_buffer[idx, :, :] = value[i, :, :]
 
                 self.output_queue[idx].set()
-
-            # policy, value = self.model.predict(input_buffer, batch_size=self.batch_size)
-            # policy = policy.reshape(self.num_workers, self.num_states, 12)
-            # value = value.reshape(self.num_workers, self.num_states, 1)
-            #
-            # for i in range(size):
-            #     idx = ids[i]
-            #     self.policy_buffer[idx, :, :] = policy[idx, :, :]
-            #     self.value_buffer[idx, :, :] = value[idx, :, :]
-            #
-            #     self.output_queue[idx].put(1)
