@@ -149,7 +149,24 @@ class DistributedNetworkProcess(Process):
 
                     self.summary_op = tf.summary.merge_all()
 
+    @staticmethod
+    def _limit_gpu(task_index):
+        import os
+        try:
+            visible_devices = os.environ['CUDA_VISIBLE_DEVICES']
+        except KeyError:
+            return
+
+        visible_devices = visible_devices.split(',')
+        num_devices = len(visible_devices)
+        if num_devices == 1:
+            return
+
+        os.environ['CUDA_VISIBLE_DEVICES'] = visible_devices[task_index % num_devices]
+
     def run(self):
+        self._limit_gpu(self.task_index)
+
         # Create and start a server for the local task.
         job_name = "ps" if self.parameter_server else "worker"
         server = tf.train.Server(self.cluster_spec, job_name=job_name, task_index=self.task_index,
@@ -226,6 +243,7 @@ class DistributedNetworkProcess(Process):
                 for worker in idx:
                     output_ready[worker].set()
 
+
 class DistributedTrainingProcess(DistributedNetworkProcess):
     def __init__(self, make_network: Callable[[], keras.Model],
                  session_config: tf.ConfigProto,
@@ -256,6 +274,8 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
         self.value_target_buffer = value_target_buffer
 
     def run(self):
+        self._limit_gpu(self.task_index)
+
         server = tf.train.Server(self.cluster_spec, job_name="worker", task_index=self.task_index,
                                  config=self.session_config)
 
