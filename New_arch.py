@@ -3,6 +3,7 @@ import tensorflow as tf
 
 from tensorflow import keras
 from ProteinNetworkUtils import RemoveMask, BooleanMask, LatticeSnake, eval_energy
+import ProteinNetworkUtils
 
 distr_48=np.array([[0,0,0,0,0,0,0,1,1,2,2,3,4,4,5,6,7,8,10,10,12,13,14,16,17,19,20,22,24,26,27,28,31,33,35,37,40,42,44,47,50,52,54,58,60,64,65,62],
 [0,0,0,0,0,0,1,1,1,2,3,3,4,5,6,6,8,9,10,11,12,13,15,16,18,20,21,23,25,26,28,30,32,35,37,39,41,44,47,49,51,55,58,60,64,65,62,0],
@@ -53,7 +54,7 @@ distr_48=np.array([[0,0,0,0,0,0,0,1,1,2,2,3,4,4,5,6,7,8,10,10,12,13,14,16,17,19,
 [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]])
 
-def make_short_network(max_aa, lattice_size=7):
+def make_short_network(max_aa, lattice_size=5):
     inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
 
     # Reshape Inputs
@@ -61,11 +62,9 @@ def make_short_network(max_aa, lattice_size=7):
     mask = keras.layers.Lambda(lambda x: tf.cast(x[:, 1], tf.bool))(inp)
     aa_length = keras.layers.Lambda(lambda x: tf.count_nonzero(x, axis=1, dtype=tf.int64))(mask)
     indices = keras.layers.Lambda(lambda x: tf.transpose(x[:, 2:5, :], perm=(0, 2, 1)))(inp)
-    current = keras.layers.Lambda(lambda x: x[:, 1, 0])(inp)
-    num_left = keras.layers.Lambda(lambda x: tf.map_fn(lambda x: tf.count_nonzero(x[x[0]+1:]), x[current:]-2))
 
     # Construct Lattice and apply convolutions across time axis
-    lattice = LatticeSnake(max_aa, lattice_size)([acids, mask, indices])
+    lattice = ProteinNetworkUtils.LatticeSnake(max_aa, lattice_size)([acids, mask, indices])
 
     conv = keras.layers.TimeDistributed(keras.layers.Conv3D(64, (5, 5, 5), padding="valid"))(lattice)
     conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
@@ -83,13 +82,13 @@ def make_short_network(max_aa, lattice_size=7):
     final = keras.layers.Flatten()(bi_lstm)
     pol_fin = keras.layers.Dense(256, activation='relu')(final)
     pol_fin = keras.layers.Dense(64, activation='relu')(pol_fin)
-    pol_fin = keras.layers.Dense(12, activation='relu')(pol_fin)
+    pol_fin = keras.layers.Dense(6, activation='relu')(pol_fin)
 
     final = keras.layers.Dense(256, activation='relu')(final)
     final = keras.layers.Dense(64, activation='relu')(final)
     final = keras.layers.Dense(1, activation=None)(final)
 
-    model = keras.Model(inp, [final, pol_fin])
+    model = keras.Model(inp, [pol_fin, final])
     return model
 
 
