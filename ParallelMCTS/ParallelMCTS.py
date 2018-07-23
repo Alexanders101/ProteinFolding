@@ -43,7 +43,8 @@ class ParallelMCTS:
     }
 
     def __init__(self, env: SinglePlayerEnvironment, make_model: Callable[[], tf.keras.Model],
-                 num_threads: int =2, num_networks: int = 4, session_config: tf.ConfigProto = None,
+                 num_threads: int =2, num_networks: int = 4, session_config: tf.ConfigProto = None, *,
+                 simulation_manager=SimulationProcessManager, simulation_options: dict = {},
                  network_options: dict = {}, database_options: dict = {}, **kwargs):
         """
         Create a Monte Carlo tree search with asynchronous simulation.
@@ -114,8 +115,8 @@ class ParallelMCTS:
                                               **network_options)
 
         # Setup Simulation Workers
-        self.workers = SimulationProcessManager(num_threads, env,
-                                                self.network_manager, self.database, self.get_config())
+        self.workers = simulation_manager(num_threads, env, self.network_manager, self.database, self.get_config(),
+                                          **simulation_options)
 
     def start(self):
         print("Starting Networks")

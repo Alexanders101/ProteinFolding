@@ -8,62 +8,6 @@ import signal
 from time import time
 
 
-class SimulationProcessManager:
-    def __init__(self, num_workers: int, env, network_manager: NetworkManager, database: DataProcess, mcts_config: dict):
-        self.num_workers = num_workers
-        self.env = env
-        self.state_shape = self.env.state_shape
-        self.network_manager = network_manager
-        self.database = database
-        self.mcts_config = mcts_config
-
-        self.state_buffer_base = Array(ctypes.c_int64, int(np.prod(env.state_shape)), lock=False)
-        self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
-        self.starting_state = self.starting_state.reshape(env.state_shape)
-
-        self.workers = [SimulationProcess(idx, env, network_manager, database,
-                                          self.state_buffer_base, self.state_shape, mcts_config)
-                        for idx in range(num_workers)]
-
-    def start(self) -> None:
-        """ Start all workers. """
-        for worker in self.workers:
-            worker.start()
-
-    def shutdown(self) -> None:
-        """ Kill workers without mercy. """
-        print("Killing Worker:", end="")
-        for i, worker in enumerate(self.workers):
-            if worker.pid:
-                print(" {}".format(i), end="")
-                os.kill(worker.pid, signal.SIGKILL)
-        print()
-
-    def set_start_state(self, state: np.ndarray) -> None:
-        """ Set the starting state for the simulation workers.
-
-        Parameters
-        ----------
-        state: np.ndarray
-            Starting state.
-        """
-        self.starting_state[:] = state.copy()
-
-    def simulation(self, clear_tree: bool = True) -> None:
-        """ Being a single simulation run for all workers.
-
-        Parameters
-        ----------
-        clear_tree : bool
-            Whether or not to clear the current game tree before starting the simulation.
-        """
-        for worker in self.workers:
-            worker.simulation(clear_tree)
-
-    def results(self):
-        res = [worker.result() for worker in self.workers]
-        return {k: [dic[k] for dic in res] for k in res[0]}
-
 class SimulationProcess(Process):
     def __init__(self, idx: int, env, network_manager: NetworkManager, database: DataProcess,
                  state_buffer_base: Array, state_shape: tuple, mcts_config: dict):
@@ -118,7 +62,7 @@ class SimulationProcess(Process):
                 'mean_pred_time': self.output_pred_time.value,
                 'mean_run_time': self.output_run_time.value}
 
-    def __simulation(self, idx: int):
+    def _simulation(self, idx: int):
         simulation_path = []
         state = self.starting_state.copy()
         state_hash = self.env.hash(self.starting_state)
@@ -142,11 +86,11 @@ class SimulationProcess(Process):
         # #####
         # Evaluate
         # ##########
-
         ###########################################################
         t0 = time()
         ###########################################################
-
+        done = False
+        last_value = None
         not_leaf_node, data = self.database.both_get(idx, state_hash)
         while not_leaf_node:
             # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
@@ -188,6 +132,7 @@ class SimulationProcess(Process):
 
             # If we reach the end of the tree, break out.
             if self.env.done(state):
+                done = True
                 if self.backup_true_value:
                     last_value = self.env.reward(state)
                 break
@@ -210,12 +155,26 @@ class SimulationProcess(Process):
             values = values[:-1, 0]
             not_leaf_node, data = self.database.both_get(idx, state_hash)
 
+        # Extra Processing done by subclasses.
+        self._process_paths(idx, done, last_value, simulation_path)
+
         # Initialize new node
         self.database.both_add(idx, state_hash)
 
         # Backup all nodes on path
         for hash, action in simulation_path:
             self.database.backup(hash, action, last_value)
+
+    def _run_simulation(self, idx, command):
+        if command == 0:
+            self.database.tree_clear(idx)
+
+        start_time = time()
+        while (time() - start_time) < self.calculation_time:
+            self._simulation(idx)
+
+    def _process_paths(self, idx, done, last_value, simulation_path):
+        pass
 
     def run(self):
         idx = self.idx
@@ -228,16 +187,11 @@ class SimulationProcess(Process):
             self.input_queue.wait()
             self.input_queue.clear()
             command = self.input_param.value
-            
+
             if command == -1:
                 break
 
-            if command == 0:
-                self.database.tree_clear(idx)
-
-            start_time = time()
-            while (time() - start_time) < self.calculation_time:
-                self.__simulation(idx)
+            self._run_simulation(idx, command)
             
             self.output_num_nodes.value = self.num_nodes
             self.output_pred_time.value = np.mean(self.pred_time)
@@ -247,4 +201,62 @@ class SimulationProcess(Process):
             self.pred_time.clear()
             self.run_time.clear()
             self.num_nodes = 0
+
+
+class SimulationProcessManager:
+    def __init__(self, num_workers: int, env, network_manager: NetworkManager, database: DataProcess, mcts_config: dict,
+                 *, worker_class=SimulationProcess, **worker_args):
+        self.num_workers = num_workers
+        self.env = env
+        self.state_shape = self.env.state_shape
+        self.network_manager = network_manager
+        self.database = database
+        self.mcts_config = mcts_config
+
+        self.state_buffer_base = Array(ctypes.c_int64, int(np.prod(env.state_shape)), lock=False)
+        self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
+        self.starting_state = self.starting_state.reshape(env.state_shape)
+
+        self.workers = [worker_class(idx, env, network_manager, database,
+                                          self.state_buffer_base, self.state_shape, mcts_config, **worker_args)
+                        for idx in range(num_workers)]
+
+    def start(self) -> None:
+        """ Start all workers. """
+        for worker in self.workers:
+            worker.start()
+
+    def shutdown(self) -> None:
+        """ Kill workers without mercy. """
+        print("Killing Worker:", end="")
+        for i, worker in enumerate(self.workers):
+            if worker.pid:
+                print(" {}".format(i), end="")
+                os.kill(worker.pid, signal.SIGKILL)
+        print()
+
+    def set_start_state(self, state: np.ndarray) -> None:
+        """ Set the starting state for the simulation workers.
+
+        Parameters
+        ----------
+        state: np.ndarray
+            Starting state.
+        """
+        self.starting_state[:] = state.copy()
+
+    def simulation(self, clear_tree: bool = True) -> None:
+        """ Being a single simulation run for all workers.
+
+        Parameters
+        ----------
+        clear_tree : bool
+            Whether or not to clear the current game tree before starting the simulation.
+        """
+        for worker in self.workers:
+            worker.simulation(clear_tree)
+
+    def results(self):
+        res = [worker.result() for worker in self.workers]
+        return {k: [dic[k] for dic in res] for k in res[0]}
 

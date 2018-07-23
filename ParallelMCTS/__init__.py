@@ -2,3 +2,6 @@ from ParallelMCTS.ParallelMCTS import ParallelMCTS
 from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DataProcess import DataProcess
 from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
+from ParallelMCTS.SimulationProcess import SimulationProcessManager
+from ParallelMCTS.OptimalSimulationProcess import OptimalSimulationProcessManager
+from ParallelMCTS.OneShotMCTS import OneShotMCTS
