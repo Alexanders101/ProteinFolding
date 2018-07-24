@@ -175,6 +175,8 @@ class NetworkManager(Process):
             visible_devices = os.environ['CUDA_VISIBLE_DEVICES']
             visible_devices = visible_devices.split(',')
             num_ps = len(visible_devices)
+            num_ps = max(num_ps, 1)
+
         except KeyError:
             num_ps = 1
 
