@@ -107,7 +107,7 @@ class ParallelMCTS:
         self.network_manager = NetworkManager(make_network=make_model,
                                               state_shape=self.state_shape,
                                               num_moves=self.num_moves,
-                                              num_states=self.num_moves + 1,
+                                              num_states=1,
                                               num_workers=num_threads,
                                               batch_size=self.batch_size,
                                               num_networks=num_networks,

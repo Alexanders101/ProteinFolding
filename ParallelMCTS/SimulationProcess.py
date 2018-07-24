@@ -62,39 +62,27 @@ class SimulationProcess(Process):
                 'mean_pred_time': self.output_pred_time.value,
                 'mean_run_time': self.output_run_time.value}
 
+    def _predict_single_node(self, idx, state):
+        policy, value = self.network_manager.predict(idx, np.expand_dims(state, 0))
+        return policy[0], value[0, 0]
+
     def _simulation(self, idx: int):
         simulation_path = []
         state = self.starting_state.copy()
         state_hash = self.env.hash(self.starting_state)
 
-        # #####
         # Create the necessary data for the root node
-        # #############################################
-        next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
-        policy, values = self.network_manager._predict_unsafe(idx, next_states)
-        policy = policy[-1]
-        values = values[:-1, 0]
-
-        if self.verbose >= 3:
-            print("Policy: {}".format(policy))
-            print("Value: {}".format(values))
-
-        # Add randomness to the initial policy prediction for exploration
-        epsilon = self.epsilon
-        policy = ((1 - epsilon) * policy) + (epsilon * np.random.dirichlet(self.alpha))
-
-        # #####
-        # Evaluate
-        # ##########
-        ###########################################################
-        t0 = time()
-        ###########################################################
-        done = False
-        last_value = None
         not_leaf_node, data = self.database.both_get(idx, state_hash)
+        policy = self.root_policy
+        if not_leaf_node:
+            N, W, Q, V, _ = data
+
+        last_value = None
+        done = False
+
+        # Loop until leaf node.
         while not_leaf_node:
             # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
-            N, _, Q, V = data
             virtual_loss = V * self.virtual_loss
             U = self.C * policy * np.sqrt(N.sum() + 1) / (1 + N)
             A = U + Q - virtual_loss
@@ -119,9 +107,8 @@ class SimulationProcess(Process):
                     print("Dead End Found")
                 break
 
-            # Get the state of our action and the predicted reward
-            next_state = next_states[best_action_idx]
-            last_value = values[best_action_idx]
+            # Get result of action and add a visit count in database
+            next_state = self.env.next_state(state, self.env.moves[best_action_idx])
             self.database.visit(state_hash, best_action_idx)
             self.num_nodes += 1
 
@@ -137,35 +124,28 @@ class SimulationProcess(Process):
                     last_value = self.env.reward(state)
                 break
 
-            next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
-
-            ###########################################################
-            self.run_time.append(time() - t0)
-            t0 = time()
-            ###########################################################
-
-            policy, values = self.network_manager._predict_unsafe(idx, next_states)
-
-            ###########################################################
-            self.pred_time.append(time() - t0)
-            t0 = time()
-            ###########################################################
-
-            policy = policy[-1]
-            values = values[:-1, 0]
+            # Get data and policy cache for the next node
             not_leaf_node, data = self.database.both_get(idx, state_hash)
+            if not_leaf_node:
+                N, W, Q, V, policy = data
 
         # Extra Processing done by subclasses.
         self._process_paths(idx, done, last_value, simulation_path)
 
         # Initialize new node
-        self.database.both_add(idx, state_hash)
+        policy, value = self._predict_single_node(idx, state)
+        self.database.both_add(idx, state_hash, policy)
+        if last_value is None:
+            last_value = value
 
         # Backup all nodes on path
         for hash, action in simulation_path:
             self.database.backup(hash, action, last_value)
 
     def _run_simulation(self, idx, command):
+        self.root_policy, _ = self._predict_single_node(idx, self.starting_state.copy())
+        self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
+
         if command == 0:
             self.database.tree_clear(idx)
 
@@ -178,9 +158,6 @@ class SimulationProcess(Process):
 
     def run(self):
         idx = self.idx
-
-        self.pred_time = []
-        self.run_time = []
         self.num_nodes = 0
 
         while True:
@@ -194,12 +171,10 @@ class SimulationProcess(Process):
             self._run_simulation(idx, command)
             
             self.output_num_nodes.value = self.num_nodes
-            self.output_pred_time.value = np.mean(self.pred_time)
-            self.output_run_time.value = np.mean(self.run_time)
+            self.output_pred_time.value = 0
+            self.output_run_time.value = 0
             self.output_queue.set()
 
-            self.pred_time.clear()
-            self.run_time.clear()
             self.num_nodes = 0
 
 
@@ -259,4 +234,109 @@ class SimulationProcessManager:
     def results(self):
         res = [worker.result() for worker in self.workers]
         return {k: [dic[k] for dic in res] for k in res[0]}
+
+
+
+def __simulation_old(self, idx: int):
+    simulation_path = []
+    state = self.starting_state.copy()
+    state_hash = self.env.hash(self.starting_state)
+
+    # #####
+    # Create the necessary data for the root node
+    # #############################################
+    next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
+    policy, values = self.network_manager._predict_unsafe(idx, next_states)
+    policy = policy[-1]
+    values = values[:-1, 0]
+
+    if self.verbose >= 3:
+        print("Policy: {}".format(policy))
+        print("Value: {}".format(values))
+
+    # Add randomness to the initial policy prediction for exploration
+    epsilon = self.epsilon
+    policy = ((1 - epsilon) * policy) + (epsilon * np.random.dirichlet(self.alpha))
+
+    # #####
+    # Evaluate
+    # ##########
+    ###########################################################
+    t0 = time()
+    ###########################################################
+    done = False
+    last_value = None
+    not_leaf_node, data = self.database.both_get(idx, state_hash)
+    while not_leaf_node:
+        # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
+        N, _, Q, V = data
+        virtual_loss = V * self.virtual_loss
+        U = self.C * policy * np.sqrt(N.sum() + 1) / (1 + N)
+        A = U + Q - virtual_loss
+
+        if self.verbose >= 3:
+            print("Q: {}".format(Q))
+            print("N: {}".format(N))
+            print("U: {}".format(U))
+            print("A: {}".format(A))
+
+        # Get the best valid move for the current state
+        sorted_actions = np.argsort(A)
+        best_action_idx = None
+        legal_choices = self.env.legal(state)
+        for possible_action in reversed(sorted_actions):
+            if possible_action in legal_choices:
+                best_action_idx = possible_action
+                break
+
+        if best_action_idx is None:
+            if self.verbose >= 1:
+                print("Dead End Found")
+            break
+
+        # Get the state of our action and the predicted reward
+        next_state = next_states[best_action_idx]
+        last_value = values[best_action_idx]
+        self.database.visit(state_hash, best_action_idx)
+        self.num_nodes += 1
+
+        # Update loop variables
+        simulation_path.append((state_hash, best_action_idx))
+        state = next_state
+        state_hash = self.env.hash(state)
+
+        # If we reach the end of the tree, break out.
+        if self.env.done(state):
+            done = True
+            if self.backup_true_value:
+                last_value = self.env.reward(state)
+            break
+
+        next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
+
+        ###########################################################
+        self.run_time.append(time() - t0)
+        t0 = time()
+        ###########################################################
+
+        policy, values = self.network_manager._predict_unsafe(idx, next_states)
+
+        ###########################################################
+        self.pred_time.append(time() - t0)
+        t0 = time()
+        ###########################################################
+
+        policy = policy[-1]
+        values = values[:-1, 0]
+        not_leaf_node, data = self.database.both_get(idx, state_hash)
+
+    # Extra Processing done by subclasses.
+    self._process_paths(idx, done, last_value, simulation_path)
+
+    # Initialize new node
+    self.database.both_add(idx, state_hash)
+
+    # Backup all nodes on path
+    for hash, action in simulation_path:
+        self.database.backup(hash, action, last_value)
 
