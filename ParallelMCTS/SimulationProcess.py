@@ -84,7 +84,7 @@ class SimulationProcess(Process):
         while not_leaf_node:
             # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
             virtual_loss = V * self.virtual_loss
-            U = self.C * policy * np.sqrt(N.sum() + 1) / (1 + N)
+            U = self.C * policy * np.sqrt(N.sum()) / (1 + N)
             A = U + Q - virtual_loss
 
             if self.verbose >= 3:

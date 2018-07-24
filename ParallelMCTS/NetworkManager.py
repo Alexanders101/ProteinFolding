@@ -168,8 +168,16 @@ class NetworkManager(Process):
         START_PORT = 2222  # CONSTANT - Starting port for making network workers and parameter servers
 
         # Compute number of parameter servers, with a minimum of 1.
-        num_ps = int(PS_RATIO * num_networks)
-        num_ps = max(num_ps, 1)
+        # num_ps = int(PS_RATIO * num_networks)
+        # num_ps = max(num_ps, 1)
+
+        try:
+            visible_devices = os.environ['CUDA_VISIBLE_DEVICES']
+            visible_devices = visible_devices.split(',')
+            num_ps = len(visible_devices)
+        except KeyError:
+            num_ps = 1
+
 
         # Cluster config uses only localhost to maintain multiple tensorflow instances.
         cluster_spec = {"worker": ["localhost:{}".format(START_PORT+i) for i in range(num_networks+1)],
