@@ -3,7 +3,9 @@ import ctypes
 from typing import Optional, Tuple
 
 from multiprocessing import Process, Queue, Array, Event
-from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
+
+from time import time
 
 
 class DataProcessCommand:
@@ -22,7 +24,101 @@ class DataProcessCommand:
     BothAdd = 9
 
 
-class DataProcess(Process):
+class BaseDatabase:
+    ####################################################################################################
+    # Private Commands
+    ####################################################################################################
+    def __add(self, idx, key):
+        if key not in self.data:
+            data = np.zeros((5, self.num_moves), dtype=np.float32)
+            data[4, :] = self.policy_buffer[idx, :]
+            self.data[key] = data
+
+        self.add_ready_event[idx].set()
+
+    def __get(self, key, idx):
+        try:
+            self.output_buffer[idx, :, :] = self.data[key][:]
+        except KeyError:
+            self.index_error_queue[idx].set()
+        self.output_queue[idx].set()
+
+    def __backup(self, key, action, last_value):
+        store = self.data[key]
+        store[0, action] += 1
+        store[1, action] += last_value
+        store[2, action] = max(store[2, action], last_value)
+        store[3, action] -= 1
+
+    def __visit(self, key, action):
+        self.data[key][3, action] += 1
+
+    def __clear(self):
+        self.data.clear()
+        for tree in self.trees:
+            tree.clear()
+
+    def __clear_tree(self, idx):
+        self.trees[idx].clear()
+
+    def __add_to_tree(self, idx, key):
+        if self.single_tree:
+            idx = 0
+        self.trees[idx].add(key)
+
+    def __is_in_tree(self, idx, key):
+        if self.single_tree:
+            tree_idx = 0
+        else:
+            tree_idx = idx
+
+        self.tree_buffer[idx] = (key in self.trees[tree_idx])
+        self.output_queue[idx].set()
+
+    def __get_data_and_tree(self, idx, key):
+        try:
+            self.output_buffer[idx, :, :] = self.data[key][:]
+        except KeyError:
+            self.index_error_queue[idx].set()
+        self.__is_in_tree(idx, key)
+
+    def __add_data_and_tree(self, idx, key):
+        self.__add(idx, key)
+        self.__add_to_tree(idx, key)
+
+    def run_command(self, idx, command, key, action, last_value):
+        if command == 0:
+            self.__add(idx, key)
+
+        elif command == 1:
+            self.__get(key, idx)
+
+        elif command == 2:
+            self.__backup(key, action, last_value)
+
+        elif command == 3:
+            self.__visit(key, action)
+
+        elif command == 4:
+            self.__clear()
+
+        elif command == 5:
+            self.__add_to_tree(idx, key)
+
+        elif command == 6:
+            self.__is_in_tree(idx, key)
+
+        elif command == 7:
+            self.__clear_tree(idx)
+
+        elif command == 8:
+            self.__get_data_and_tree(idx, key)
+
+        elif command == 9:
+            self.__add_data_and_tree(idx, key)
+
+
+class DataProcess(Process, BaseDatabase):
     def __init__(self, num_moves: int, num_workers: int = 1, single_tree: bool = False,
                  synchronous: bool = True, num_action_threads: int = 16):
         """ This process manages the MCTS databases and trees used for asynchronous MCTS.
@@ -51,6 +147,7 @@ class DataProcess(Process):
         self.num_action_threads = num_action_threads
 
         self.input_queue = Queue()
+        self.kill_event = Event()
         self.output_queue = [Event() for _ in range(num_workers)]
         self.index_error_queue = [Event() for _ in range(num_workers)]
 
@@ -72,7 +169,12 @@ class DataProcess(Process):
 
     def shutdown(self) -> None:
         """ Shutdown server. """
-        self.input_queue.put((-1, -1, -1, -1, -1))
+        if self.synchronous:
+            self.input_queue.put((-1, -1, -1, -1, -1))
+        else:
+            for _ in range(self.num_action_threads):
+                self.input_queue.put((-1, -1, -1, -1, -1))
+            self.kill_event.set()
 
     ####################################################################################################
     # User Facing Commands
@@ -294,113 +396,58 @@ class DataProcess(Process):
         command = DataProcessCommand.BothAdd
         self.input_queue.put((idx, command, key, 0, 0))
 
-    ####################################################################################################
-    # Private Commands
-    ####################################################################################################
     def __initialize_data(self):
         self.data = {}
         self.trees = [set() for _ in range(self.num_workers)]
-        self.thread_pool = None
-        if not self.synchronous:
-            self.thread_pool = ThreadPoolExecutor(self.num_action_threads)
-
-    def __add(self, idx, key):
-        if key not in self.data:
-            self.data[key] = np.zeros((5, self.num_moves), dtype=np.float32)
-            self.data[key][4, :] = self.policy_buffer[idx, :]
-
-        self.add_ready_event[idx].set()
-
-    def __get(self, key, idx):
-        try:
-            self.output_buffer[idx, :, :] = self.data[key][:]
-        except KeyError:
-            self.index_error_queue[idx].set()
-        self.output_queue[idx].set()
-
-    def __backup(self, key, action, last_value):
-        store = self.data[key]
-        store[0, action] += 1
-        store[1, action] += last_value
-        store[2, action] = max(store[2, action], last_value)
-        store[3, action] -= 1
-
-    def __visit(self, key, action):
-        self.data[key][3, action] += 1
-
-    def __clear(self):
-        self.data.clear()
-        for tree in self.trees:
-            tree.clear()
-
-    def __clear_tree(self, idx):
-        self.trees[idx].clear()
-
-    def __add_to_tree(self, idx, key):
-        if self.single_tree:
-            idx = 0
-        self.trees[idx].add(key)
-
-    def __is_in_tree(self, idx, key):
-        if self.single_tree:
-            tree_idx = 0
-        else:
-            tree_idx = idx
-
-        self.tree_buffer[idx] = (key in self.trees[tree_idx])
-        self.output_queue[idx].set()
-
-    def __get_data_and_tree(self, idx, key):
-        try:
-            self.output_buffer[idx, :, :] = self.data[key][:]
-        except KeyError:
-            self.index_error_queue[idx].set()
-        self.__is_in_tree(idx, key)
-
-    def __add_data_and_tree(self, idx, key):
-        self.__add(idx, key)
-        self.__add_to_tree(idx, key)
-
-    def __run_command(self, idx, command, key, action, last_value):
-        if command == 0:
-            self.__add(idx, key)
-
-        elif command == 1:
-            self.__get(key, idx)
-
-        elif command == 2:
-            self.__backup(key, action, last_value)
-
-        elif command == 3:
-            self.__visit(key, action)
-
-        elif command == 4:
-            self.__clear()
-
-        elif command == 5:
-            self.__add_to_tree(idx, key)
-
-        elif command == 6:
-            self.__is_in_tree(idx, key)
-
-        elif command == 7:
-            self.__clear_tree(idx)
-
-        elif command == 8:
-            self.__get_data_and_tree(idx, key)
-
-        elif command == 9:
-            self.__add_data_and_tree(idx, key)
 
     def run(self):
         self.__initialize_data()
 
+        if not self.synchronous:
+            threads = []
+            for i in range(self.num_action_threads):
+                thread = DatabaseWorker(self.single_tree, self.num_workers, self.num_moves,
+                                        self.input_queue, self.output_queue, self.index_error_queue,
+                                        self.output_buffer, self.tree_buffer, self.policy_buffer,
+                                        self.add_ready_event, self.data, self.trees, i)
+                thread.start()
+                threads.append(thread)
+
+            self.kill_event.wait()
+
+        else:
+            while True:
+                idx, command, key, action, last_value = self.input_queue.get()
+                if idx < 0:
+                    break
+                self.run_command(idx, command, key, action, last_value)
+
+
+class DatabaseWorker(Thread, BaseDatabase):
+    def __init__(self, single_tree, num_workers, num_moves, input_queue, output_queue, index_error_queue,
+                 output_buffer, tree_buffer, policy_buffer, add_ready_event, data, trees, thread_number):
+        super(DatabaseWorker, self).__init__()
+
+        self.single_tree = single_tree
+        self.num_workers = num_workers
+        self.num_moves = num_moves
+        self.thread_number = thread_number
+
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+        self.index_error_queue = index_error_queue
+        self.output_buffer = output_buffer
+        self.tree_buffer = tree_buffer
+        self.policy_buffer = policy_buffer
+        self.add_ready_event = add_ready_event
+
+        self.data = data
+        self.trees = trees
+
+    def run(self):
         while True:
             idx, command, key, action, last_value = self.input_queue.get()
             if idx < 0:
                 break
+            self.run_command(idx, command, key, action, last_value)
 
-            if self.synchronous:
-                self.__run_command(idx, command, key, action, last_value)
-            else:
-                self.thread_pool.submit(self.__run_command, idx, command, key, action, last_value)
