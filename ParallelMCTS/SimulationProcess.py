@@ -74,7 +74,7 @@ class SimulationProcess(Process):
         # Create the necessary data for the root node
         not_leaf_node, data = self.database.both_get(idx, state_hash)
         policy = self.root_policy
-        if not_leaf_node:
+        if data is not None:
             N, W, Q, V, _ = data
 
         last_value = None
@@ -126,7 +126,7 @@ class SimulationProcess(Process):
 
             # Get data and policy cache for the next node
             not_leaf_node, data = self.database.both_get(idx, state_hash)
-            if not_leaf_node:
+            if data is not None:
                 N, W, Q, V, policy = data
 
         # Extra Processing done by subclasses.
