@@ -13,7 +13,7 @@ from time import sleep
 
 @jit("void(int64[::1], int64[::1], int64[::1])", nopython=True)
 def counting_unique_sort(arr: np.ndarray, buckets: np.ndarray, output: np.ndarray):
-    """ This function performs an integer couting sort.
+    """ This function performs an integer counting sort.
 
     Runtime is O(k) where k is the maximum possible value of the input.
 
@@ -48,7 +48,7 @@ class NetworkManager(Process):
 
         Parameters
         ----------
-        make_network : () -> keras.Model
+        make_network : () -> Keras.Model
             Function defining how to construct your network.
         state_shape : (int, ...)
             Shape of a single input state.
@@ -72,7 +72,7 @@ class NetworkManager(Process):
             Starting port for the tensorflow servers.
         num_ps : float -- Named Only
             Sets the number of parameter servers.
-            If None - Sets to number of GPUS
+            If None - Sets to number of GPUs
             If 0 < num_ps < 1 - Treat num_ps as a ratio of the number of workers.
             If num_ps >= 1 - Treat num_ps as the number of servers.
         """
