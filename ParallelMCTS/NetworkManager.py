@@ -294,7 +294,7 @@ class NetworkManager(Process):
     def fit(self, states: np.ndarray, policy_targets: np.ndarray, value_targets: np.ndarray) -> None:
         """ Schedules a training request.
 
-        This will block if there is training in progress. This will block until the training network is free.
+        This will block if there is training in progress. It will continue to block until the training network is free.
 
         Parameters
         ----------
@@ -317,7 +317,7 @@ class NetworkManager(Process):
         self.training_input_queue.put((0, num_samples))
 
     def save_weights(self, weight_file: str) -> None:
-        """ Places a save_weights request. This will save the current weights of the network to a keras hdf5 file.
+        """ Schedule a save_weights request. This will save the current weights of the network to a Keras hdf5 file.
 
         Parameters
         ----------

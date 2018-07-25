@@ -5,6 +5,7 @@ from tensorflow.contrib import training
 import numpy as np
 from typing import Callable
 
+
 class DistributedNetworkConfig:
     def __init__(self, learning_rate=0.01,
                  policy_weight=1.0,
@@ -14,6 +15,7 @@ class DistributedNetworkConfig:
                  checkpoint_steps=None,
                  checkpoint_dir=None,
                  **kwargs):
+
         self.learning_rate = learning_rate
         self.policy_weight = policy_weight
         self.training_batch_size = training_batch_size
@@ -21,6 +23,8 @@ class DistributedNetworkConfig:
         self.log_dir = log_dir
         self.checkpoint_steps = checkpoint_steps
         self.checkpoint_dir = checkpoint_dir
+        self.other_args = kwargs
+
 
 class DistributedNetworkProcess(Process):
     def __init__(self, make_network: Callable[[], keras.Model],
@@ -88,7 +92,7 @@ class DistributedNetworkProcess(Process):
         self.policy_buffer = policy_buffer
         self.value_buffer = value_buffer
 
-    def _initialize_network(self, training_network=False):
+    def _initialize_network(self, training_network: bool = False) -> None:
         """ Create Tensorflow graph. """
         keras.backend.manual_variable_initialization(True)
 
@@ -150,7 +154,14 @@ class DistributedNetworkProcess(Process):
                     self.summary_op = tf.summary.merge_all()
 
     @staticmethod
-    def _limit_gpu(task_index):
+    def _limit_gpu(task_index: int) -> None:
+        """ Limit the current process to only using one gpu. The gpu is selected in round robin by task index.
+
+        Parameters
+        ----------
+        task_index : int
+            The index of this worker.
+        """
         import os
         try:
             visible_devices = os.environ['CUDA_VISIBLE_DEVICES']
@@ -207,7 +218,6 @@ class DistributedNetworkProcess(Process):
             policy_buffer = self.policy_buffer
             value_buffer = self.value_buffer
             num_moves = policy_buffer.shape[-1]
-
 
             policy = self.policy
             value = self.value
@@ -338,4 +348,3 @@ class DistributedTrainingProcess(DistributedNetworkProcess):
                             writer.add_summary(summaries, step)
 
                 ready_event.set()
-
