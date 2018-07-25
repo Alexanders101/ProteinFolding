@@ -180,6 +180,8 @@ class ParallelMCTS:
         options = dict(zip(DistributedNetworkConfig.__init__.__code__.co_varnames[1:-1],
                            DistributedNetworkConfig.__init__.__defaults__))
         options['train_buffer_size'] = 64
+        options['start_port'] = 2222
+        options['num_ps'] = None
         return options
 
     @staticmethod

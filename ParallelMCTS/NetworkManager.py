@@ -12,7 +12,7 @@ from time import sleep
 
 
 @jit("void(int64[::1], int64[::1], int64[::1])", nopython=True)
-def counting_unique_sort(arr, buckets, output):
+def counting_unique_sort(arr: np.ndarray, buckets: np.ndarray, output: np.ndarray):
     """ This function performs an integer couting sort.
 
     Runtime is O(k) where k is the maximum possible value of the input.
@@ -42,7 +42,8 @@ def counting_unique_sort(arr, buckets, output):
 class NetworkManager(Process):
     def __init__(self, make_network: Callable[[], keras.Model], state_shape: Tuple[int, ...],
                  num_moves: int, num_states: int, batch_size: int = None, num_workers: int = 1, num_networks: int = 1,
-                 train_buffer_size: int = 64, session_config: tf.ConfigProto = None, **kwargs):
+                 session_config: tf.ConfigProto = None, *, train_buffer_size: int = 64,
+                 start_port: int = 2222, num_ps: float = None, **kwargs):
         """ Class for managing distributed Tensorflow models and predict / train asynchronously.
 
         Parameters
@@ -61,11 +62,19 @@ class NetworkManager(Process):
             How many asynchronous workers will utilize this class for prediction.
         num_networks : int
             Number of network instances to create.
-        train_buffer_size : int
-            Batch size for training. This will create train buffers for that batch size, do not put more
-            data than that into a buffer.
         session_config : tf.ConfigProto
             Tensorflow session config object.
+
+        train_buffer_size : int -- Named Only
+            Batch size for training. This will create train buffers for that batch size, do not put more
+            data than that into a buffer.
+        start_port : int -- Named Only
+            Starting port for the tensorflow servers.
+        num_ps : float -- Named Only
+            Sets the number of parameter servers.
+            If None - Sets to number of GPUS
+            If 0 < num_ps < 1 - Treat num_ps as a ratio of the number of workers.
+            If num_ps >= 1 - Treat num_ps as the number of servers.
         """
         super(NetworkManager, self).__init__()
         self.make_network = make_network
@@ -164,26 +173,29 @@ class NetworkManager(Process):
         # ############################################################################################
         #  Network Creation
         # ############################################################################################
-        PS_RATIO = 0.5  # CONSTANT - Ratio of parameter servers to network workers
-        START_PORT = 2222  # CONSTANT - Starting port for making network workers and parameter servers
+        # Calculate number of servers.
+        # Default to number of GPUs available.
+        if num_ps is None:
+            try:
+                visible_devices = os.environ['CUDA_VISIBLE_DEVICES']
+                visible_devices = visible_devices.split(',')
+                num_ps = len(visible_devices)
+            except KeyError:
+                num_ps = 1
 
-        # Compute number of parameter servers, with a minimum of 1.
-        # num_ps = int(PS_RATIO * num_networks)
-        # num_ps = max(num_ps, 1)
+        # If ratio between 0 and 1, calculate number of workers
+        elif num_ps < 1:
+            num_ps = int(num_ps * num_networks)
 
-        try:
-            visible_devices = os.environ['CUDA_VISIBLE_DEVICES']
-            visible_devices = visible_devices.split(',')
-            num_ps = len(visible_devices)
-            num_ps = max(num_ps, 1)
+        # Otherwise treat as raw value
+        else:
+            num_ps = int(num_ps)
 
-        except KeyError:
-            num_ps = 1
-
+        num_ps = max(num_ps, 1)
 
         # Cluster config uses only localhost to maintain multiple tensorflow instances.
-        cluster_spec = {"worker": ["localhost:{}".format(START_PORT+i) for i in range(num_networks+1)],
-                        "ps": ["localhost:{}".format(START_PORT+num_networks+i+1) for i in range(num_ps)]}
+        cluster_spec = {"worker": ["localhost:{}".format(start_port+i) for i in range(num_networks+1)],
+                        "ps": ["localhost:{}".format(start_port+num_networks+i+1) for i in range(num_ps)]}
         cluster_spec = tf.train.ClusterSpec(cluster_spec)
 
         # Create Network Workers
@@ -206,6 +218,7 @@ class NetworkManager(Process):
         # Create Parameter Servers
         self.parameter_servers = []
         for i in range(num_ps):
+            # noinspection PyTypeChecker
             ps = DistributedNetworkProcess(make_network, session_config,
                                            task_index=i,
                                            parameter_server=True,
