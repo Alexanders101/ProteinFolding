@@ -41,8 +41,8 @@ def counting_unique_sort(arr: np.ndarray, buckets: np.ndarray, output: np.ndarra
 
 class NetworkManager(Process):
     def __init__(self, make_network: Callable[[], keras.Model], state_shape: Tuple[int, ...],
-                 num_moves: int, num_states: int, batch_size: int = None, num_workers: int = 1, num_networks: int = 1,
-                 session_config: tf.ConfigProto = None, *, train_buffer_size: int = 64,
+                 num_moves: int, num_states: int, num_workers: int = 1, num_networks: int = 1,
+                 session_config: tf.ConfigProto = None, *, batch_size: int = None, train_buffer_size: int = 64,
                  start_port: int = 2222, num_ps: float = None, **kwargs):
         """ Class for managing distributed Tensorflow models and predict / train asynchronously.
 
@@ -56,8 +56,6 @@ class NetworkManager(Process):
             Number of moves possible.
         num_states : int
             How many states you plan to feed in at any given time.
-        batch_size : int
-            Batch size network uses for prediction. This should be a multiple of num_states.
         num_workers : int
             How many asynchronous workers will utilize this class for prediction.
         num_networks : int
@@ -65,12 +63,15 @@ class NetworkManager(Process):
         session_config : tf.ConfigProto
             Tensorflow session config object.
 
-        train_buffer_size : int -- Named Only
+        batch_size : int -- Named Only, default = None
+            Batch size network uses for prediction. This should be a multiple of num_states.
+            If None, even batches are calculated.
+        train_buffer_size : int -- Named Only, default = 64
             Batch size for training. This will create train buffers for that batch size, do not put more
             data than that into a buffer.
-        start_port : int -- Named Only
+        start_port : int -- Named Only, default = 2222
             Starting port for the tensorflow servers.
-        num_ps : float -- Named Only
+        num_ps : float -- Named Only, default = None
             Sets the number of parameter servers.
             If None - Sets to number of GPUs
             If 0 < num_ps < 1 - Treat num_ps as a ratio of the number of workers.
