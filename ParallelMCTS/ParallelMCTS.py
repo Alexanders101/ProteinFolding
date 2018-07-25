@@ -43,7 +43,7 @@ class ParallelMCTS:
     }
 
     def __init__(self, env: SinglePlayerEnvironment, make_model: Callable[[], tf.keras.Model],
-                 num_threads: int =2, num_networks: int = 4, session_config: tf.ConfigProto = None, *,
+                 num_workers: int = 2, num_networks: int = 4, session_config: tf.ConfigProto = None, *,
                  simulation_manager=SimulationProcessManager, simulation_options: dict = {},
                  network_options: dict = {}, database_options: dict = {}, **kwargs):
         """
@@ -56,8 +56,16 @@ class ParallelMCTS:
         make_model : () -> keras.Model
             A function defining how to create your model.
             The resulting network has the following signature: State -> (Policy, Value)
+        num_workers : int
+            Number of simulation workers for a single game.
+        num_networks : int
+            Number of prediction networks.
         session_config : tf.ConfigProto
             A config object for the Tensorflow session created.
+        simulation_manager : SimulationProcessManager
+            Class for performing simulations. Only override this if you know what you are doing.
+        simulation_options : dict
+            Extra options for simulation manager.
         network_options : dict
             Extra options to pass to NetworkManager. ParallelMCTS.NetworkOptions() provides all options with defaults.
         database_options : dict
@@ -101,21 +109,21 @@ class ParallelMCTS:
         self.alpha = np.repeat(self.alpha, repeats=self.num_moves)
 
         # Simulation database
-        self.database = DataProcess(self.num_moves, num_threads, single_tree=self.single_tree, **database_options)
+        self.database = DataProcess(self.num_moves, num_workers, single_tree=self.single_tree, **database_options)
 
         # Setup Networks
         self.network_manager = NetworkManager(make_network=make_model,
                                               state_shape=self.state_shape,
                                               num_moves=self.num_moves,
                                               num_states=1,
-                                              num_workers=num_threads,
+                                              num_workers=num_workers,
                                               batch_size=self.batch_size,
                                               num_networks=num_networks,
                                               session_config=session_config,
                                               **network_options)
 
         # Setup Simulation Workers
-        self.workers = simulation_manager(num_threads, env, self.network_manager, self.database, self.get_config(),
+        self.workers = simulation_manager(num_workers, env, self.network_manager, self.database, self.get_config(),
                                           **simulation_options)
 
     def start(self):
