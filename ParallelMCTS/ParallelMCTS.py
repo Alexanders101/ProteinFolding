@@ -126,9 +126,9 @@ class ParallelMCTS:
         self.workers = simulation_manager(num_workers, env, self.network_manager, self.database, self.get_config(),
                                           **simulation_options)
 
-    def start(self):
+    def start(self, training_network_wait_time: float = 3):
         print("Starting Networks")
-        self.network_manager.start()
+        self.network_manager.start(wait_time=training_network_wait_time)
         self.network_manager.wait_until_all_ready()
 
         print("Starting Database")
