@@ -5,8 +5,6 @@ from typing import Optional, Tuple
 from multiprocessing import Process, Queue, Array, Event
 from threading import Thread
 
-from time import time
-
 
 class DataProcessCommand:
     """ A small class to hold constants for the possible data process commands. """
@@ -450,4 +448,3 @@ class DatabaseWorker(Thread, BaseDatabase):
             if idx < 0:
                 break
             self.run_command(idx, command, key, action, last_value)
-
