@@ -1,6 +1,7 @@
 from multiprocessing import Process, Array, Event, Value
 from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DataProcess import DataProcess
+from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
 import numpy as np
 import ctypes
 import os
@@ -8,8 +9,10 @@ import signal
 from time import time
 
 
+# noinspection PyAttributeOutsideInit,PyPep8Naming
 class SimulationProcess(Process):
-    def __init__(self, idx: int, env, network_manager: NetworkManager, database: DataProcess,
+    def __init__(self, idx: int, network_offset: int, env: SinglePlayerEnvironment,
+                 network_manager: NetworkManager, database: DataProcess,
                  state_buffer_base: Array, state_shape: tuple, mcts_config: dict):
         super(SimulationProcess, self).__init__()
 
@@ -17,6 +20,7 @@ class SimulationProcess(Process):
         self.env = env
         self.database = database
         self.network_manager = network_manager
+        self.network_offset = network_offset
 
         self.starting_state = np.ctypeslib.as_array(state_buffer_base)
         self.starting_state = self.starting_state.reshape(state_shape)
@@ -26,9 +30,7 @@ class SimulationProcess(Process):
         self.output_queue.set()
 
         self.input_param = Value('l', 0, lock=False)
-        self.output_num_nodes = Value('l', 0, lock=False)
-        self.output_pred_time = Value('d', 0.0, lock=False)
-        self.output_run_time = Value('d', 0.0, lock=False)
+        self.output_num_nodes = Value('d', 0, lock=False)
 
         self.calculation_time = mcts_config['calculation_time']
         self.C = mcts_config['C']
@@ -38,14 +40,24 @@ class SimulationProcess(Process):
         self.verbose = mcts_config['verbose']
         self.backup_true_value = mcts_config['backup_true_value']
 
-    def shutdown(self):
+    def shutdown(self) -> None:
+        """ Shutdown this simulation server. Blocks until simulation server is free.
+        """
         self.output_queue.wait()
         self.output_queue.clear()
 
         self.input_param.value = -1
         self.input_queue.set()
 
-    def simulation(self, clear_tree: bool = True):
+    def simulation(self, clear_tree: bool = True) -> None:
+        """ Queue a single simulation run.
+
+        Parameters
+        ----------
+        clear_tree : bool = True
+            Whether or not to clear the simulation tree for this simulation.
+            This is useful if you want to split the simulation into multiple batches.
+        """
         self.output_queue.wait()
         self.output_queue.clear()
 
@@ -56,22 +68,52 @@ class SimulationProcess(Process):
 
         self.input_queue.set()
 
-    def result(self):
-        self.output_queue.wait()
-        return {'num_nodes': self.output_num_nodes.value,
-                'mean_pred_time': self.output_pred_time.value,
-                'mean_run_time': self.output_run_time.value}
+    def result(self) -> dict:
+        """ Block until simulation has finished and get the result dictionary.
 
-    def _predict_single_node(self, idx, state):
-        policy, value = self.network_manager.predict(idx, np.expand_dims(state, 0))
+        Returns
+        -------
+        result_dict : dict
+            Dictionary of various simulation statistics.
+        """
+        self.output_queue.wait()
+        return {'nodes_per_second': self.output_num_nodes.value}
+
+    def _predict_single_node(self, idx: int, state: np.ndarray):
+        """ Use network to predict on a single state.
+
+        Parameters
+        ----------
+        idx : int
+            Worker index.
+        state : np.ndarray
+            A NON-BATCHED single state.
+
+        Returns
+        -------
+        policy : np.ndarray
+            The policy prediction for this state.
+        value : float
+            The value prediction for this state.
+        """
+        policy, value = self.network_manager.predict(self.network_offset + idx, np.expand_dims(state, 0))
         return policy[0], value[0, 0]
 
+    # noinspection PyUnboundLocalVariable
     def _simulation(self, idx: int):
+        """ Perform a single simulation run until encountering a leaf node.
+
+        Parameters
+        ----------
+        idx : int
+            Worker index.
+        """
         simulation_path = []
         state = self.starting_state.copy()
         state_hash = self.env.hash(self.starting_state)
 
         # Create the necessary data for the root node
+        # noinspection PyTupleAssignmentBalance
         not_leaf_node, data = self.database.both_get(idx, state_hash)
         policy = self.root_policy
         if data is not None:
@@ -102,12 +144,13 @@ class SimulationProcess(Process):
                     best_action_idx = possible_action
                     break
 
+            # Bail if we have encountered a dead end
             if best_action_idx is None:
                 if self.verbose >= 1:
                     print("Dead End Found")
                 break
 
-            # Get result of action and add a visit count in database
+            # Get result of action and add a visit count to database
             next_state = self.env.next_state(state, self.env.moves[best_action_idx])
             self.database.visit(state_hash, best_action_idx)
             self.num_nodes += 1
@@ -125,6 +168,7 @@ class SimulationProcess(Process):
                 break
 
             # Get data and policy cache for the next node
+            # noinspection PyTupleAssignmentBalance
             not_leaf_node, data = self.database.both_get(idx, state_hash)
             if data is not None:
                 N, W, Q, V, policy = data
@@ -139,21 +183,50 @@ class SimulationProcess(Process):
             last_value = value
 
         # Backup all nodes on path
-        for hash, action in simulation_path:
-            self.database.backup(hash, action, last_value)
+        for state_hash, action in simulation_path:
+            self.database.backup(state_hash, action, last_value)
 
-    def _run_simulation(self, idx, command):
-        self.root_policy, _ = self._predict_single_node(idx, self.starting_state.copy())
-        self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
+    def _run_simulation(self, idx, command) -> None:
+        """ Start an MCTS simulation for the configured time.
 
+        Parameters
+        ----------
+        idx : int
+            Worker index.
+        command : int
+            Command received.
+        """
+        # Clear search tree for new simulation.
         if command == 0:
             self.database.tree_clear(idx)
 
+        # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
+        self.root_policy, self.root_value = self._predict_single_node(idx, self.starting_state.copy())
+        self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
+        self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
+
+        # Run simulations until we run out of time.
         start_time = time()
         while (time() - start_time) < self.calculation_time:
             self._simulation(idx)
 
-    def _process_paths(self, idx, done, last_value, simulation_path):
+    def _process_paths(self, idx: int, done: bool, last_value: float, simulation_path) -> None:
+        """ Overwrite this method in specializations of SimulationProcess.
+
+        This is called before the backup step in order to perform any
+        extra processing on the MCTS path.
+
+        Parameters
+        ----------
+        idx : int
+            Index of worker.
+        done : bool
+            Whether or not eh simulation concluded on an ending state.
+        last_value : float or None
+            The value of the final state. This could be None.
+        simulation_path : [(hash, move)]
+            The path MCTS took during that simulation.
+        """
         pass
 
     def run(self):
@@ -170,31 +243,34 @@ class SimulationProcess(Process):
 
             self._run_simulation(idx, command)
             
-            self.output_num_nodes.value = self.num_nodes
-            self.output_pred_time.value = 0
-            self.output_run_time.value = 0
+            self.output_num_nodes.value = self.num_nodes / self.calculation_time
             self.output_queue.set()
-
             self.num_nodes = 0
 
 
 class SimulationProcessManager:
-    def __init__(self, num_workers: int, env, network_manager: NetworkManager, database: DataProcess, mcts_config: dict,
-                 *, worker_class=SimulationProcess, **worker_args):
+    def __init__(self, server_index: int, num_workers: int, env: SinglePlayerEnvironment,
+                 network_manager: NetworkManager, database: DataProcess, mcts_config: dict,
+                 *, worker_class: type = SimulationProcess, **worker_args):
+        self.server_index = server_index
         self.num_workers = num_workers
         self.env = env
-        self.state_shape = self.env.state_shape
+
         self.network_manager = network_manager
         self.database = database
         self.mcts_config = mcts_config
 
+        self.state_shape = self.env.state_shape
         self.state_buffer_base = Array(ctypes.c_int64, int(np.prod(env.state_shape)), lock=False)
         self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
         self.starting_state = self.starting_state.reshape(env.state_shape)
 
-        self.workers = [worker_class(idx, env, network_manager, database,
-                                          self.state_buffer_base, self.state_shape, mcts_config, **worker_args)
-                        for idx in range(num_workers)]
+        network_offset = server_index * num_workers
+        self.workers = []
+        for idx in range(num_workers):
+            worker = worker_class(idx, network_offset, env, network_manager, database,
+                                  self.state_buffer_base, self.state_shape, mcts_config, **worker_args)
+            self.workers.append(worker)
 
     def start(self) -> None:
         """ Start all workers. """
@@ -204,9 +280,9 @@ class SimulationProcessManager:
     def shutdown(self) -> None:
         """ Kill workers without mercy. """
         print("Killing Worker:", end="")
-        for i, worker in enumerate(self.workers):
+        for idx, worker in enumerate(self.workers):
             if worker.pid:
-                print(" {}".format(i), end="")
+                print(" {}".format(idx), end="")
                 os.kill(worker.pid, signal.SIGKILL)
         print()
 
@@ -234,7 +310,6 @@ class SimulationProcessManager:
     def results(self):
         res = [worker.result() for worker in self.workers]
         return {k: [dic[k] for dic in res] for k in res[0]}
-
 
 
 def __simulation_old(self, idx: int):
