@@ -6,13 +6,18 @@ import random
 from ParallelMCTS import SinglePlayerEnvironment
 
 
-@jit("int64[::1](int64[:, :], int64)")
-def coord_hash(coords, L):
+@jit("int64[::1](int64[:, :], int64, int64)")
+def coord_hash(coords, L, dim):
     num_coords = coords.shape[0]
     result = np.empty(num_coords, np.int64)
-    for i in range(num_coords):
-        coord = coords[i]
-        result[i] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
+    if dim == 2:
+        for i in range(num_coords):
+            coord = coords[i]
+            result[i] = coord[0] * L * 2 + coord[1]
+    else:
+        for i in range(num_coords):
+            coord = coords[i]
+            result[i] = coord[0] * L * L * 4 + coord[1] * L * 2 + coord[2]
     return result
 
 
@@ -43,15 +48,15 @@ def _next_state_multi(state, moves):
     return result
 
 
-@jit(Set(int64)(int64[:, ::1], int64[:, ::1]), nopython=True)
-def _legal(state, directions):
+@jit(Set(int64)(int64[:, ::1], int64[:, ::1], int64), nopython=True)
+def _legal(state, directions, dim):
     size = state.shape[1]
     current_index = state[1, 0] - 1
     last_coord = state[2:, current_index]
     possible_moves = last_coord + directions
 
-    possible_moves_H = coord_hash(possible_moves, size)
-    visited_H = set(coord_hash(state[2:, :current_index + 1].T, size))
+    possible_moves_H = coord_hash(possible_moves, size, dim)
+    visited_H = set(coord_hash(state[2:, :current_index + 1].T, size, dim))
     result = set()
     for i in range(directions.shape[0]):
         h = possible_moves_H[i]
@@ -61,7 +66,7 @@ def _legal(state, directions):
 
 
 class NPProtein(SinglePlayerEnvironment):
-    def __init__(self, max_length, energy_distance=2):
+    def __init__(self, max_length, energy_distance=1, dimension=3):
         """
         Container Class for NP Protein Environment.
 
@@ -72,9 +77,12 @@ class NPProtein(SinglePlayerEnvironment):
         energy_distance : float
             Distance to evaluate neighboring acids
         """
-        self._state_shape = (5, max_length)
-
-        self.directions = np.array([(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)])
+        self.dim = dimension
+        self._state_shape = (dimension+2, max_length)
+        if dimension == 3:
+            self.directions = np.array([(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)])
+        else:
+            self.directions = np.array([(1, 0), (-1, 0), (0, 1), (0, -1)])
         self._moves = np.arange(0, len(self.directions))
         self.energy_distance = energy_distance
         self._max_length = max_length
@@ -109,7 +117,7 @@ class NPProtein(SinglePlayerEnvironment):
         protein_length = protein_string.shape[0]
         assert protein_length <= self.max_length, "Input protein is longer than maximum allowed protein"
 
-        out = np.zeros((5, self.max_length), dtype=np.int64)
+        out = np.zeros((self.dim+2, self.max_length), dtype=np.int64)
         out[0, :protein_length] = protein_string
         out[1, 0] = 1
         return out
@@ -174,6 +182,7 @@ class NPProtein(SinglePlayerEnvironment):
             return state, big_state, one_hot
         return state
 
+
     def legal(self, state):
         """
         The valid moves to perform given a state.
@@ -188,7 +197,7 @@ class NPProtein(SinglePlayerEnvironment):
             The valid moves that can be performed.
 
         """
-        return _legal(state, self.directions)
+        return _legal(state, self.directions, self.dim)
 
     def hash(self, state):
         """
@@ -271,3 +280,16 @@ class NPProtein(SinglePlayerEnvironment):
         final1 = result3 <= self.energy_distance
         final2 = result3 > 0
         return np.sum(final1 & final2)
+
+    def print(self, state):
+        """
+        Returns a lattice representation for the 2-D proteins folds.
+
+        """
+        grid = np.zeros((2*self._max_length-1, 2*self._max_length-1))
+        curr_idx = state[1, 0]
+        mid = np.array([self._max_length-1, self._max_length-1])
+        for x in range(curr_idx):
+            idx = mid + state[2:,x]
+            grid[int(idx[0]), int(idx[1])] = state[0,x]
+        return grid
