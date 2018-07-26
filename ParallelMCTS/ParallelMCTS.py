@@ -350,19 +350,27 @@ class ParallelMCTS:
         # Play game until finished
         t = 0
         while not self.env.done(state):
+            # Calculate legal moves and bail if we're at a dead end
             legal_moves = self.env.legal(state)
             if len(legal_moves) == 0:
                 break
 
+            # Run simulation to compute policy
             pi = self.select_moves(worker_idx, state)
 
+            # Store game data in buffer
             states[t, :] = state
             pis[t, :] = pi
             t += 1
 
-            # Todo Limit to legal moves
+            # Set all illegal moves Probability to 0
+            for move_idx in range(self.num_moves):
+                if self.env.moves[move_idx] not in legal_moves:
+                    pi[move_idx] = 0
+
+            # Sample from policy and make next move
             next_move = np.random.choice(np.arange(0, len(pi)), p=pi)
-            state = self.env.next_state(state, next_move)
+            state = self.env.next_state(state, self.env.moves[next_move])
 
         # Value target is final reward of episode
         R = np.repeat(self.env.reward(state), t)
