@@ -92,12 +92,20 @@ class NPProtein(SinglePlayerEnvironment):
         return self._moves
 
     @property
+    def num_moves(self) -> int:
+        return self._moves.shape[0]
+
+    @property
     def state_shape(self):
         return self._state_shape
 
     @property
+    def state_type(self):
+        return np.int64
+
+    @property
     def max_length(self):
-        return self._max_length
+        return self._max_length - 1
 
     def new_state(self, protein_string):
         """
@@ -115,9 +123,9 @@ class NPProtein(SinglePlayerEnvironment):
 
         """
         protein_length = protein_string.shape[0]
-        assert protein_length <= self.max_length, "Input protein is longer than maximum allowed protein"
+        assert protein_length <= self._max_length, "Input protein is longer than maximum allowed protein"
 
-        out = np.zeros((self.dim+2, self.max_length), dtype=np.int64)
+        out = np.zeros((self.dim+2, self._max_length), dtype=np.int64)
         out[0, :protein_length] = protein_string
         out[1, 0] = 1
         return out
@@ -153,14 +161,14 @@ class NPProtein(SinglePlayerEnvironment):
 
     def random_state(self, length=None):
         if length is None:
-            length = self.max_length
+            length = self._max_length
 
         random_string = np.random.randint(1, 3, size=length)
         return self.new_state(random_string)
 
     def random_moves(self, state, length=None, policy=False):
         if length is None:
-            length = self.max_length
+            length = self._max_length
         if policy:
             choices = np.zeros(length-1)
             big_state = np.zeros((state.shape[1], state.shape[0], state.shape[1]))
@@ -228,7 +236,7 @@ class NPProtein(SinglePlayerEnvironment):
         bool
 
         """
-        final_idx = find_end(state, self.max_length)
+        final_idx = find_end(state, self._max_length)
         return state[1, final_idx] > 0
 
     def reward(self, state):
@@ -286,9 +294,9 @@ class NPProtein(SinglePlayerEnvironment):
         Returns a lattice representation for the 2-D proteins folds.
 
         """
-        grid = np.zeros((2*self._max_length-1, 2*self._max_length-1))
+        grid = np.zeros((2*self.max_length, 2*self.max_length))
         curr_idx = state[1, 0]
-        mid = np.array([self._max_length-1, self._max_length-1])
+        mid = np.array([self.max_length, self.max_length])
         for x in range(curr_idx):
             idx = mid + state[2:,x]
             grid[int(idx[0]), int(idx[1])] = state[0,x]
