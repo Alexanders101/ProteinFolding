@@ -134,7 +134,7 @@ class DistributedNetworkProcess(Process):
                         self.total_loss = (policy_weight * self.policy_loss) + (value_weight * self.value_loss)
 
                 with tf.name_scope("Optimizer"):
-                    self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.network_config.learning_rate)
+                    self.optimizer = tf.train.AdamOptimizer(learning_rate=self.network_config.learning_rate)
                     self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)
                     self.train_op = tf.group(self.train_op, *self.model.updates)
 
