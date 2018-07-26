@@ -461,6 +461,6 @@ class ParallelMCTS:
         results = worker.results()
 
         if self.verbose >= 2:
-            print("{} Nodes per second".format(np.mean(results['nodes_per_second'])))
+            print("{} Nodes per second".format(np.sum(results['nodes_per_second'])))
 
         return self._temperature_policy(database.get(0, self.env.hash(state))[0])

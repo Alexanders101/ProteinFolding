@@ -241,9 +241,11 @@ class SimulationProcess(Process):
             if command == -1:
                 break
 
+            t0 = time()
             self._run_simulation(idx, command)
+            t1 = time()
             
-            self.output_num_nodes.value = self.num_nodes / self.calculation_time
+            self.output_num_nodes.value = self.num_nodes / (t1 - t0)
             self.output_queue.set()
             self.num_nodes = 0
 
