@@ -12,41 +12,66 @@ model.compile("adam", loss="MSE", loss_weights=[100, 1])
 filename = "/Users/danielstephens/weights_saved_Jul23_epoch_good.h5"
 model.load_weights(filename)
 
-NUM_EPOCHS = 1
+determined_values = True
+
+def diver(protein_env, state, depth, model):
+    if state[1,0] == state.shape[1]-1:
+        depth = 1
+    if depth == 1:
+        num_moves = list(start.legal(state))
+        if not len(num_moves):
+            return 0, 0
+        mid = np.zeros((len(num_moves), state.shape[0], state.shape[1]))
+        for t in range(len(num_moves)):
+            mid[t] = start.next_state(state, num_moves[t])
+        policy, value = model.predict(mid)
+        max_ = np.max(value)
+        return num_moves[np.argmax(value)], max_
+    else:
+        num_moves = list(start.legal(state))
+        if not len(num_moves):
+            print("cornered")
+            return -1, -1
+        mid = np.zeros(len(num_moves))
+        for t in range(len(num_moves)):
+            nothin, mid[t] = diver(start, start.next_state(state, num_moves[t]), depth-1, model)
+        idx = np.argmax(mid)
+        return num_moves[idx], mid[idx]
+
+NUM_EPOCHS = 5
 NUM_SAMPLES = 10
-start = NPProtein(N, 1)
+start = NPProtein(N, 1, 3)
 for x in range(NUM_EPOCHS):
     count = 0
     y = np.random.randint(20, 30, NUM_SAMPLES)
-    store = np.zeros(((N-1)*NUM_SAMPLES, 5, 48), dtype=np.int64)
+    store = np.zeros(((N-1)*NUM_SAMPLES, 5, N), dtype=np.int64)
+    energies = np.zeros((NUM_SAMPLES, 1))
     policies = np.zeros(((N-1)*NUM_SAMPLES, 6))
     values = np.zeros(((N-1)*NUM_SAMPLES, 1))
-    states = np.zeros((NUM_SAMPLES, 5, 48), dtype=np.int64)
-    energies = np.zeros(NUM_SAMPLES)
     for z in range(NUM_SAMPLES):
         string = np.zeros(N) + 2
         string[:y[z]] = 1
         string = np.random.permutation(string)
         state = start.new_state(string)
         for u in range(N-1):
-            num_moves = list(start.legal(state))
-            mid = np.zeros((len(num_moves), 5, 48))
-            for t in range(len(num_moves)):
-                mid[t] = start.next_state(state, num_moves[t])
-            if not num_moves:
-                count += 1
-                continue
-            policy, value = model.predict(mid)
-            move = np.argmax(value)
+            move, value = diver(start, state, 2, model)
+            if move == -1 and value == -1:
+                print("got cornered")
+                break
             store[count] = state
-            values[count] = value[move]
-            policies[count, num_moves[move]] = 1
-            state = start.next_state(state, num_moves[move])
+            state = start.next_state(state, move)
+            if not determined_values:
+                if u != N-2:
+                    values[count] = value
+                else:
+                    values[count] = start.eval_energy(state)
+            policies[count, move] = 1
             count += 1
-        energies[z] = start.reward(state)
-    plt.hist(energies)
-    print(np.mean(energies))
-    filepath="weights_saved_greedy_Jul23_epoch_{}.h5".format(x)
+    energies[z] = start.reward(state)
+    print(np.mean(energies), np.max(energies))
+    if determined_values:
+        values = np.repeat(energies, N-1)
+    filepath="weights_saved_greedy_Jul26_epoch0_{}.h5".format(x)
     #checkpoint = keras.callbacks.ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=False, mode='max')
     #callbacks_list = [checkpoint]
     print("Epoch {}".format(x))
