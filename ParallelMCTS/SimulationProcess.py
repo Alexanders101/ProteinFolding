@@ -186,7 +186,7 @@ class SimulationProcess(Process):
         for state_hash, action in simulation_path:
             self.database.backup(state_hash, action, last_value)
 
-    def _run_simulation(self, idx, command) -> None:
+    def _run_simulation(self, idx: int, command: int) -> None:
         """ Start an MCTS simulation for the configured time.
 
         Parameters

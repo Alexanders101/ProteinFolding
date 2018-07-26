@@ -1,16 +1,25 @@
+""" OptimalSimulationProcessManager & OptimalSimulationProcess
+
+This file implements an alternative simulation process to the regular MCTS that performs a single long MCTS simulation
+in order to find the best path from start to finish.
+
+"""
 import numpy as np
 from ParallelMCTS.SimulationProcess import SimulationProcess, SimulationProcessManager
 from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DataProcess import DataProcess
+from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
 
 from multiprocessing import Array, Value
 from ctypes import c_int64, c_float
 
 
 class OptimalSimulationProcessManager(SimulationProcessManager):
-    def __init__(self, num_workers: int, env, network_manager: NetworkManager, database: DataProcess, mcts_config: dict,
+    def __init__(self, server_index: int, num_workers: int, env: SinglePlayerEnvironment,
+                 network_manager: NetworkManager, database: DataProcess, mcts_config: dict,
                  max_to_keep: int = 10):
-        super(OptimalSimulationProcessManager, self).__init__(num_workers, env, network_manager, database, mcts_config,
+        super(OptimalSimulationProcessManager, self).__init__(server_index, num_workers, env,
+                                                              network_manager, database, mcts_config,
                                                               worker_class=OptimalSimulationProcess,
                                                               max_to_keep=max_to_keep)
         self.max_to_keep = max_to_keep
@@ -33,25 +42,27 @@ class OptimalSimulationProcessManager(SimulationProcessManager):
 
 
 class OptimalSimulationProcess(SimulationProcess):
-    def __init__(self, *args, max_to_keep=5, **kwargs):
+    def __init__(self, *args, max_to_keep: int = 5, **kwargs):
         super(OptimalSimulationProcess, self).__init__(*args, **kwargs)
-        self.max_to_keep = max_to_keep
+        self.max_to_keep: int = max_to_keep
+        self.num_paths: int = 0
 
         self.__best_paths_base = Array(c_int64, max_to_keep * self.env.max_length, lock=False)
-        self.best_paths = np.frombuffer(self.__best_paths_base, dtype=np.int64, count=max_to_keep * self.env.max_length)
-        self.best_paths = self.best_paths.reshape((max_to_keep, self.env.max_length))
+        self.best_paths: np.ndarray = np.frombuffer(self.__best_paths_base, dtype=np.int64, count=max_to_keep * self.env.max_length)
+        self.best_paths: np.ndarray = self.best_paths.reshape((max_to_keep, self.env.max_length))
 
         self.best_value = Value(c_float, lock=False)
 
-    def _run_simulation(self, idx, command):
+    def _run_simulation(self, idx: int, command: int) -> None:
+        """ An amendment to the _run_simulation method to add a store for keeping the best encountered value. """
         self.best_value.value = -np.float32(np.inf)
-        self.num_paths = 0
+        self.num_paths: int = 0
         self.best_paths.fill(-1)
 
         super(OptimalSimulationProcess, self)._run_simulation(idx, command)
 
-    def _process_paths(self, idx, done, last_value, simulation_path):
-        if not done or last_value < self.best_value.value:
+    def _process_paths(self, idx: int, done: bool, last_value: float, simulation_path) -> None:
+        if (not done) or (last_value is None) or (last_value < self.best_value.value):
             return
 
         # Extract the full path to solution from the simulation
@@ -65,7 +76,7 @@ class OptimalSimulationProcess(SimulationProcess):
 
         # If we have found a better bath, store it and update best value
         if last_value > self.best_value.value:
-            self.best_paths[:self.num_paths] = -1
+            self.best_paths[:self.num_paths].fill(-1)
             self.best_paths[0, :path_size] = path
             self.num_paths = 1
             self.best_value.value = last_value
