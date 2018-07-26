@@ -4,14 +4,15 @@ This file implements an alternative simulation process to the regular MCTS that 
 in order to find the best path from start to finish.
 
 """
-import numpy as np
-from ParallelMCTS.SimulationProcess import SimulationProcess, SimulationProcessManager
-from ParallelMCTS.NetworkManager import NetworkManager
-from ParallelMCTS.DataProcess import DataProcess
-from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
-
-from multiprocessing import Array, Value
 from ctypes import c_int64, c_float
+from multiprocessing import Array, Value
+
+import numpy as np
+
+from ParallelMCTS.DataProcess import DataProcess
+from ParallelMCTS.NetworkManager import NetworkManager
+from ParallelMCTS.SimulationProcess import SimulationProcess, SimulationProcessManager
+from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
 
 
 class OptimalSimulationProcessManager(SimulationProcessManager):
@@ -48,7 +49,8 @@ class OptimalSimulationProcess(SimulationProcess):
         self.num_paths: int = 0
 
         self.__best_paths_base = Array(c_int64, max_to_keep * self.env.max_length, lock=False)
-        self.best_paths: np.ndarray = np.frombuffer(self.__best_paths_base, dtype=np.int64, count=max_to_keep * self.env.max_length)
+        self.best_paths: np.ndarray = np.frombuffer(self.__best_paths_base, dtype=np.int64,
+                                                    count=max_to_keep * self.env.max_length)
         self.best_paths: np.ndarray = self.best_paths.reshape((max_to_keep, self.env.max_length))
 
         self.best_value = Value(c_float, lock=False)
@@ -80,4 +82,3 @@ class OptimalSimulationProcess(SimulationProcess):
             self.best_paths[0, :path_size] = path
             self.num_paths = 1
             self.best_value.value = last_value
-
