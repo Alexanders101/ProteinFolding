@@ -1,8 +1,54 @@
 import numpy as np
 
+import ctypes
 from abc import ABC, abstractmethod
 from typing import Set, List, Hashable
 
+
+def np2c(numpy_type: type):
+    """ Utility function to convert numpy datatypes into ctypes.
+
+    Parameters
+    ----------
+    numpy_type : type
+        Numpy dtype.
+
+    Returns
+    -------
+
+    """
+    # Int Types
+    if numpy_type == np.int:
+        return ctypes.c_int
+    elif numpy_type == np.int8:
+        return ctypes.c_int8
+    elif numpy_type == np.int16:
+        return ctypes.c_int16
+    elif numpy_type == np.int32:
+        return ctypes.c_int32
+    elif numpy_type == np.int64:
+        return ctypes.c_int64
+
+    # Unsigned Int types
+    elif numpy_type == np.uint:
+        return ctypes.c_uint
+    elif numpy_type == np.uint8:
+        return ctypes.c_uint8
+    elif numpy_type == np.uint16:
+        return ctypes.c_uint16
+    elif numpy_type == np.uint32:
+        return ctypes.c_uint32
+    elif numpy_type == np.uint64:
+        return ctypes.c_uint64
+
+    # Float Types
+    elif numpy_type == np.float32:
+        return ctypes.c_float
+    elif numpy_type == np.float64:
+        return ctypes.c_double
+
+    else:
+        raise ValueError("Cannot convert {} into a ctype.".format(numpy_type))
 
 class SinglePlayerEnvironment(ABC):
     """ This is the abstract base class of any environment that is used with ParallelMCTS. The environment consists
@@ -19,8 +65,20 @@ class SinglePlayerEnvironment(ABC):
 
     @property
     @abstractmethod
+    def num_moves(self) -> int:
+        """ This property returns the total number of moves allowed for this environment. """
+        pass
+
+    @property
+    @abstractmethod
     def state_shape(self) -> List[int]:
         """ This property returns the static shape of any state in the environment. """
+        pass
+
+    @property
+    @abstractmethod
+    def state_type(self) -> type:
+        """ This property returns the numpy data-type of the state. """
         pass
 
     @property

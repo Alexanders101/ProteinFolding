@@ -1,5 +1,6 @@
 from multiprocessing import Process, Queue, Array, Event
 from ParallelMCTS.DistributedNetworkProcess import DistributedNetworkProcess, DistributedTrainingProcess
+from ParallelMCTS.SinglePlayerEnvironment import np2c
 import tensorflow as tf
 from tensorflow import keras
 import ctypes
@@ -40,7 +41,7 @@ def counting_unique_sort(arr: np.ndarray, buckets: np.ndarray, output: np.ndarra
 
 
 class NetworkManager(Process):
-    def __init__(self, make_network: Callable[[], keras.Model], state_shape: Tuple[int, ...],
+    def __init__(self, make_network: Callable[[], keras.Model], state_shape: Tuple[int, ...], state_type: type,
                  num_moves: int, num_states: int, num_workers: int = 1, num_networks: int = 1,
                  session_config: tf.ConfigProto = None, *, batch_size: int = None, train_buffer_size: int = 64,
                  start_port: int = 2222, num_ps: float = None, **kwargs):
@@ -131,12 +132,13 @@ class NetworkManager(Process):
         # ############################################################################################
         # Buffers
         # ############################################################################################
+        state_type = np2c(state_type)
         c_int64 = ctypes.c_int64
         c_float = ctypes.c_float
 
         # INPUT BUFFER - Workers place input states onto here.
         input_buffer_shape = (num_workers, num_states, *state_shape)
-        self.__input_buffer_base = Array(c_int64, int(np.prod(input_buffer_shape)), lock=False)
+        self.__input_buffer_base = Array(state_type, int(np.prod(input_buffer_shape)), lock=False)
         self.input_buffer = np.ctypeslib.as_array(self.__input_buffer_base).reshape(input_buffer_shape)
 
         # INDEX BUFFERS - Manager places the indices of network inputs onto here.
@@ -156,7 +158,7 @@ class NetworkManager(Process):
 
         # TRAINING_BUFFER - Master places states for training here.
         training_buffer_shape = (train_buffer_size, *state_shape)
-        self.__training_buffer_base = Array(c_int64, int(np.prod(training_buffer_shape)), lock=False)
+        self.__training_buffer_base = Array(state_type, int(np.prod(training_buffer_shape)), lock=False)
         self.training_buffer = np.ctypeslib.as_array(self.__training_buffer_base).reshape(training_buffer_shape)
 
         # POLICY TARGET BUFFER - Master places policy targets for training here.

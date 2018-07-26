@@ -102,7 +102,7 @@ class ParallelMCTS:
         """
         # Set up environment
         self.env = env
-        self.num_moves = len(self.env.moves)
+        self.num_moves = self.env.num_moves
         self.state_shape = tuple(self.env.state_shape)
 
         # Class parameters
@@ -344,8 +344,8 @@ class ParallelMCTS:
         state = start_state.copy()
 
         # Return Buffers
-        states = np.zeros(shape=(self.env.max_length - 1, *self.env.state_shape), dtype=np.int64)
-        pis = np.zeros(shape=(self.env.max_length - 1, self.env.moves.shape[0]), dtype=np.float32)
+        states = np.zeros(shape=(self.env.max_length, *self.env.state_shape), dtype=self.env.state_type)
+        pis = np.zeros(shape=(self.env.max_length, self.env.moves.shape[0]), dtype=np.float32)
 
         # Play game until finished
         t = 0
@@ -375,6 +375,7 @@ class ParallelMCTS:
         # Value target is final reward of episode
         R = np.repeat(self.env.reward(state), t)
         R = np.expand_dims(R, 1)
+        R = R.astype(np.float32)
 
         # Training Data
         return states[:t], pis[:t], R
