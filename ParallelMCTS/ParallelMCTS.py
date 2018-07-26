@@ -147,14 +147,14 @@ class ParallelMCTS:
         self.network_manager.start(wait_time=training_network_wait_time)
         self.network_manager.wait_until_all_ready()
 
-        print("Starting Databases")
+        print("\nStarting Databases")
         print("=" * 60)
         for i, database in enumerate(self.databases):
             print("Starting Database {}".format(i))
             database.start()
 
         sleep(1)
-        print("Starting Workers")
+        print("\nStarting Workers")
         print("=" * 60)
         for i, worker in enumerate(self.workers):
             print("Starting Worker {}".format(i))
@@ -167,11 +167,11 @@ class ParallelMCTS:
             print("Shutting Down Worker {}".format(i))
             worker.shutdown()
 
-        print("Shutting Down Network Manager")
+        print("\nShutting Down Network Manager")
         print("=" * 60)
         self.network_manager.shutdown()
 
-        print("Shutting Down Databases")
+        print("\nShutting Down Databases")
         print("=" * 60)
         for i, database in enumerate(self.databases):
             print("Shutting Down Database {}".format(i))

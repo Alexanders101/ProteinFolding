@@ -174,6 +174,15 @@ class DataProcess(Process, BaseDatabase):
                 self.input_queue.put((-1, -1, -1, -1, -1))
             self.kill_event.set()
 
+    def __str__(self):
+        out = [super(DataProcess, self).__str__()]
+        out.append("="*60)
+        out.append("Synchronous: {}".format(self.synchronous))
+        if not self.synchronous:
+            out.append("Num Threads: {}".format(self.num_action_threads))
+        out.append("-"*60)
+        return "\n".join(out)
+
     ####################################################################################################
     # User Facing Commands
     ####################################################################################################

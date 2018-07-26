@@ -200,6 +200,7 @@ class NetworkManager(Process):
         cluster_spec = {"worker": ["localhost:{}".format(start_port+i) for i in range(num_networks+1)],
                         "ps": ["localhost:{}".format(start_port+num_networks+i+1) for i in range(num_ps)]}
         cluster_spec = tf.train.ClusterSpec(cluster_spec)
+        self.cluster_spec = cluster_spec
 
         # Create Network Workers
         self.networks = []
@@ -246,6 +247,26 @@ class NetworkManager(Process):
                                                            policy_target_buffer=self.policy_target_buffer,
                                                            value_target_buffer=self.value_target_buffer,
                                                            **kwargs)
+
+    def __str__(self):
+        cluster_spec = self.cluster_spec.as_dict()
+
+        out = [super(NetworkManager, self).__str__()]
+        out.append("="*60)
+        out.append("Number of Prediction Networks: {}".format(self.num_networks))
+        out.append("Number of Parameter Servers: {}".format(len(cluster_spec['ps'])))
+        out.append("")
+        out.append("Cluster Specification: ")
+        out.append("    Prediction Network: {}".format(cluster_spec['worker'][0]))
+        out.append("-" * 60)
+        for i, worker in enumerate(cluster_spec['worker'][1:]):
+            out.append("    Worker Network {}: {}".format(i, worker))
+        out.append("-"*60)
+        for i, ps in enumerate(cluster_spec['ps']):
+            out.append("    Parameter Server {}: {}".format(i, ps))
+        out.append("-" * 60)
+
+        return "\n".join(out)
 
     def wait_until_all_ready(self) -> None:
         """ Blocks until all networks have initialized. """
