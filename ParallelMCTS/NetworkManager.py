@@ -401,10 +401,6 @@ class NetworkManager(Process):
         self.input_queue.put(-1)
 
     def start(self, wait_time: float = 3):
-        print("Starting Training Network.")
-        self.training_network.start()
-        sleep(wait_time)
-
         for i, network in enumerate(self.networks):
             print("Starting Prediction Network {}".format(i))
             network.start()
@@ -412,6 +408,10 @@ class NetworkManager(Process):
         for i, ps in enumerate(self.parameter_servers):
             print("Starting Parameter Server {}".format(i))
             ps.start()
+
+        sleep(wait_time)
+        print("Starting Training Network.")
+        self.training_network.start()
 
         print("Starting Network Manager.")
         super(NetworkManager, self).start()
