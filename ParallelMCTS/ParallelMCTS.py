@@ -25,7 +25,8 @@ from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
 import numpy as np
 import tensorflow as tf
 from typing import Callable, Tuple
-from time import time, sleep
+from time import sleep
+from concurrent.futures import ThreadPoolExecutor
 
 
 # noinspection PyPep8Naming
@@ -136,8 +137,12 @@ class ParallelMCTS:
             self.databases.append(database)
             self.workers.append(worker)
 
+        # Thread pool for multi-train
+        self.worker_thread_pool = ThreadPoolExecutor(max_workers=num_games)
+
     def start(self, training_network_wait_time: float = 3):
         print("Starting Networks")
+        print("="*60)
         self.network_manager.start(wait_time=training_network_wait_time)
         self.network_manager.wait_until_all_ready()
 
@@ -158,7 +163,7 @@ class ParallelMCTS:
         print("Shutting Down Network Manager")
         self.network_manager.shutdown()
 
-        print("Shutting Down Database")
+        print("Shutting Down Databases")
         for database in self.databases:
             database.shutdown()
 
@@ -244,13 +249,47 @@ class ParallelMCTS:
         """
         self.databases[idx].clear()
 
-    def fit_epoch(self, num_games: int = 1) -> None:
+    def _fit_epoch_multi_work(self, worker_idx: int, num_games: int, states, policies, values):
+        for game in range(num_games):
+            start_state = self.env.random_state()
+            s, pi, r = self.play(worker_idx, start_state, clear=True)
+
+            states.append(s)
+            policies.append(pi)
+            values.append(r)
+
+    def fit_epoch_multi(self, num_games_per_worker: int = 1):
+        states = []
+        policies = []
+        values = []
+
+        futures = []
+        for worker_idx in range(self.num_games):
+            future = self.worker_thread_pool.submit(self._fit_epoch_multi_work, worker_idx, num_games_per_worker,
+                                                    states, policies, values)
+            futures.append(future)
+
+        for future in futures:
+            future.result()
+
+        states = np.concatenate(states)
+        policies = np.concatenate(policies)
+        values = np.concatenate(values)
+
+        self.network_manager.fit(states, policies, values)
+
+
+    def fit_epoch_single(self, num_games: int = 1, worker_idx: int = 0) -> None:
         """ Play a certain number of games and then train on the resulting data.
+
+        This is the single-process version. Only one simulation worker will be launched.
 
         Parameters
         ----------
         num_games : int
             Number of games to play for data collection.
+        worker_idx : int
+            Which worker should play
         """
         states = []
         policies = []
@@ -258,7 +297,7 @@ class ParallelMCTS:
 
         for game in range(num_games):
             start_state = self.env.random_state()
-            s, pi, r = self.play(start_state)
+            s, pi, r = self.play(worker_idx, start_state, clear=True)
 
             states.append(s)
             policies.append(pi)
