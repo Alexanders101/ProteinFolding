@@ -146,8 +146,8 @@ class SinglePlayerEnvironment(ABC):
         return [self.next_state(state, action) for action in actions]
 
     @abstractmethod
-    def legal(self, state: np.ndarray) -> Set[object]:
-        """ The legal moves to perform from a given state.
+    def legal(self, state: np.ndarray) -> Set[int]:
+        """ Indices of legal moves to perform from a given state.
 
         Parameters
         ----------
@@ -156,8 +156,8 @@ class SinglePlayerEnvironment(ABC):
 
         Returns
         -------
-        Set[object]
-            A set of move objects filled with moves that are valid from this state.
+        Set[int]
+            A set of indices filled with moves that are valid from this state.
 
         """
         pass

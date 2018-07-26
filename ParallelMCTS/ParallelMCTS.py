@@ -345,7 +345,7 @@ class ParallelMCTS:
 
         # Return Buffers
         states = np.zeros(shape=(self.env.max_length, *self.env.state_shape), dtype=self.env.state_type)
-        pis = np.zeros(shape=(self.env.max_length, self.env.moves.shape[0]), dtype=np.float32)
+        pis = np.zeros(shape=(self.env.max_length, self.env.num_moves), dtype=np.float32)
 
         # Play game until finished
         t = 0
@@ -365,7 +365,7 @@ class ParallelMCTS:
 
             # Set all illegal moves Probability to 0
             for move_idx in range(self.num_moves):
-                if self.env.moves[move_idx] not in legal_moves:
+                if move_idx not in legal_moves:
                     pi[move_idx] = 0
 
             # Sample from policy and make next move

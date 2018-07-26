@@ -1,7 +1,7 @@
 from multiprocessing import Process, Array, Event, Value
 from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DataProcess import DataProcess
-from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment, py2c
+from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment, np2c
 import numpy as np
 import ctypes
 import os
@@ -263,7 +263,7 @@ class SimulationProcessManager:
         self.mcts_config = mcts_config
 
         self.state_shape = self.env.state_shape
-        state_type = py2c(env.state_type)
+        state_type = np2c(env.state_type)
         self.state_buffer_base = Array(state_type, int(np.prod(env.state_shape)), lock=False)
         self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
         self.starting_state = self.starting_state.reshape(env.state_shape)
