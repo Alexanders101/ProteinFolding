@@ -284,6 +284,27 @@ class NetworkManager(Process):
         """
         return self._predict_unsafe(idx, states)
 
+    def predict_single(self, idx: int, state: np.ndarray) -> Tuple[np.ndarray, float]:
+        """ Schedule a predict request for a single state. This will block until the results are ready.
+
+        This is identical to predict in terms of how it works. This is just a helper function to avoid having to
+        batch single states all the time.
+
+        Parameters
+        ----------
+        idx : int
+            Index of worker.
+        state : np.ndarray[int, [None, ...]]
+            A single, non-batched, state
+
+        Returns
+        -------
+        policy : np.ndarray[float, [num_moves]]
+        value : float
+        """
+        policy, value = self.predict(idx, np.expand_dims(state, 0))
+        return policy[0], value[0, 0]
+
     def _predict_unsafe(self, idx, states):
         num_samples = states.shape[0]
 

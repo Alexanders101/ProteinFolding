@@ -120,6 +120,7 @@ class ParallelMCTS:
         # Setup Networks
         self.network_manager = NetworkManager(make_network=make_model,
                                               state_shape=self.state_shape,
+                                              state_type=env.state_type,
                                               num_moves=self.num_moves,
                                               num_states=1,
                                               num_workers=self.num_total_workers,
@@ -147,24 +148,33 @@ class ParallelMCTS:
         self.network_manager.wait_until_all_ready()
 
         print("Starting Databases")
-        for database in self.databases:
+        print("=" * 60)
+        for i, database in enumerate(self.databases):
+            print("Starting Database {}".format(i))
             database.start()
 
         sleep(1)
         print("Starting Workers")
-        for worker in self.workers:
+        print("=" * 60)
+        for i, worker in enumerate(self.workers):
+            print("Starting Worker {}".format(i))
             worker.start()
 
     def shutdown(self):
         print("Shutting Down Workers")
-        for worker in self.workers:
+        print("=" * 60)
+        for i, worker in enumerate(self.workers):
+            print("Shutting Down Worker {}".format(i))
             worker.shutdown()
 
         print("Shutting Down Network Manager")
+        print("=" * 60)
         self.network_manager.shutdown()
 
         print("Shutting Down Databases")
-        for database in self.databases:
+        print("=" * 60)
+        for i, database in enumerate(self.databases):
+            print("Shutting Down Database {}".format(i))
             database.shutdown()
 
     def __enter__(self):
