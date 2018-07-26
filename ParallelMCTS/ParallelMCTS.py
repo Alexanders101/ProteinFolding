@@ -288,7 +288,6 @@ class ParallelMCTS:
 
         self.network_manager.fit(states, policies, values)
 
-
     def fit_epoch_single(self, num_games: int = 1, worker_idx: int = 0) -> None:
         """ Play a certain number of games and then train on the resulting data.
 
@@ -379,7 +378,7 @@ class ParallelMCTS:
                     pi[move_idx] = 0
 
             # Sample from policy and make next move
-            next_move = np.random.choice(np.arange(0, len(pi)), p=pi)
+            next_move = np.random.choice(pi.shape[0], p=pi)
             state = self.env.next_state(state, self.env.moves[next_move])
 
         # Value target is final reward of episode

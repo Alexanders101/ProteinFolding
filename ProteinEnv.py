@@ -6,7 +6,7 @@ import random
 from ParallelMCTS import SinglePlayerEnvironment
 
 
-@jit("int64[::1](int64[:, :], int64, int64)")
+@jit("int64[::1](int64[:, :], int64, int64)", nopython=True, cache=True)
 def coord_hash(coords, L, dim):
     num_coords = coords.shape[0]
     result = np.empty(num_coords, np.int64)
@@ -21,7 +21,7 @@ def coord_hash(coords, L, dim):
     return result
 
 
-@jit('int64(int64[:, ::1], int64)', nopython=True)
+@jit('int64(int64[:, ::1], int64)', nopython=True, cache=True)
 def find_end(protein_string, max_size):
     i = 0
     while protein_string[0, i] > 0 and i < max_size:
@@ -29,7 +29,7 @@ def find_end(protein_string, max_size):
     return i - 1
 
 
-@jit('void(int64[:, ::1], int64[::1])', nopython=True)
+@jit('void(int64[:, ::1], int64[::1])', nopython=True, cache=True)
 def _next_state(state, move):
     index = state[1, 0]
     state[1, index] = 1
@@ -38,7 +38,7 @@ def _next_state(state, move):
     state[1, 0] = index + 1
 
 
-@jit('int64[:, :, ::1](int64[:, ::1], int64[:, ::1])', nopython=True)
+@jit('int64[:, :, ::1](int64[:, ::1], int64[:, ::1])', nopython=True, cache=True)
 def _next_state_multi(state, moves):
     num_moves = moves.shape[0]
     result = np.empty((num_moves, state.shape[0], state.shape[1]), dtype=np.int64)
@@ -48,7 +48,7 @@ def _next_state_multi(state, moves):
     return result
 
 
-@jit(Set(int64)(int64[:, ::1], int64[:, ::1], int64), nopython=True)
+@jit(Set(int64)(int64[:, ::1], int64[:, ::1], int64), nopython=True, cache=True)
 def _legal(state, directions, dim):
     size = state.shape[1]
     current_index = state[1, 0] - 1
