@@ -30,7 +30,7 @@ class SimulationProcess(Process):
         self.output_queue.set()
 
         self.input_param = Value('l', 0, lock=False)
-        self.output_num_nodes = Value('d', 0, lock=False)
+        self.output_num_nodes = Value('l', 0, lock=False)
 
         self.calculation_time = mcts_config['calculation_time']
         self.C = mcts_config['C']
@@ -77,7 +77,7 @@ class SimulationProcess(Process):
             Dictionary of various simulation statistics.
         """
         self.output_queue.wait()
-        return {'nodes_per_second': self.output_num_nodes.value}
+        return {'total_nodes': self.output_num_nodes.value}
 
     def _predict_single_node(self, idx: int, state: np.ndarray):
         """ Use network to predict on a single state.
@@ -241,11 +241,9 @@ class SimulationProcess(Process):
             if command == -1:
                 break
 
-            t0 = time()
             self._run_simulation(idx, command)
-            t1 = time()
             
-            self.output_num_nodes.value = self.num_nodes / (t1 - t0)
+            self.output_num_nodes.value = self.num_nodes
             self.output_queue.set()
             self.num_nodes = 0
 
