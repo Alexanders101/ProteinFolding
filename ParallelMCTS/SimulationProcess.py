@@ -146,6 +146,7 @@ class SimulationProcess(Process):
 
             # Bail if we have encountered a dead end
             if best_action_idx is None:
+                last_value = 0
                 if self.verbose >= 1:
                     print("Dead End Found")
                 break

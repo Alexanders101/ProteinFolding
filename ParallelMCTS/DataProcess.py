@@ -45,7 +45,8 @@ class BaseDatabase:
         store = self.data[key]
         store[0, action] += 1
         store[1, action] += last_value
-        store[2, action] = max(store[2, action], last_value)
+        store[2, action] = store[1, action] / store[0, action]
+        # store[2, action] = max(store[2, action], last_value)
         store[3, action] -= 1
 
     def __visit(self, key, action):
