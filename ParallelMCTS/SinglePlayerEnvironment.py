@@ -89,7 +89,7 @@ class SinglePlayerEnvironment(ABC):
 
     @abstractmethod
     def new_state(self, state_definition: object) -> np.ndarray:
-        """ This method is responsible for create a new state object from some simpler definition.
+        """ This method is responsible for create a new state object from some a simpler definition.
 
         A state must be represented by a single numpy array with a constant shape defined by state_shape.
 
