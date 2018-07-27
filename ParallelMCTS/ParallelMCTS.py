@@ -29,8 +29,6 @@ from time import sleep
 from concurrent.futures import ThreadPoolExecutor
 
 from multiprocessing import cpu_count
-from tensorflow.python.client import device_lib
-
 
 # noinspection PyPep8Naming
 class ParallelMCTS:
@@ -228,12 +226,12 @@ class ParallelMCTS:
 
     @staticmethod
     def GenerateTensorflowConfig(num_networks: int = 4,
+                                 num_gpu: int = 1,
                                  growth: bool = False,
                                  gpu_memory_ratio: float = 0.95) -> tf.ConfigProto:
         num_networks += 1
 
         num_cpu = cpu_count()
-        num_gpu = len([x for x in device_lib.list_local_devices() if x.device_type == 'GPU'])
 
         optimizer_options = tf.OptimizerOptions(do_common_subexpression_elimination=True,
                                                 do_constant_folding=True,
