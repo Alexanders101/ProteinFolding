@@ -54,6 +54,71 @@ class Lattice(keras.layers.Layer):
                                   validate_indices=False)
 
 
+class Lattice2D(keras.layers.Layer):
+    def __init__(self, protein_length, **kwargs):
+        """
+        Keras Layer for transforming protein index strings into a 3d lattice.
+
+        This layer will only work when using the Tensorflow Backend.
+
+        Parameters
+        ----------
+        protein_length : Maximum length of input protein. Referred to as N.
+
+        Layer Parameters
+        ----------------
+        Layer expects the following input:
+        [acids, idx, batch]
+        -------------------
+        acids : (None, N) - float32
+            String of acids
+        idx : (None, N, 3) - int64
+            String of 3d acid indices
+        mask : (None, N) - bool
+            String of mask for indicating current acid.
+        """
+        self.N = protein_length
+        super(Lattice2D, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        super(Lattice2D, self).build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        acids, mask, idx = inputs
+
+        idx = 2 * (idx + (self.N - 1))
+
+        inter_idx = tf.cast(tf.nn.pool(tf.cast(idx, tf.float32), [2], "AVG", "VALID"), tf.int64)
+        inter_values = tf.nn.pool(tf.expand_dims(acids, 2), [2], "AVG", "VALID")
+        inter_values = tf.squeeze(inter_values, 2)
+        inter_values = 2 * inter_values + 1
+
+        combined_idx = tf.concat([idx, inter_idx], axis=1)
+        combined_values = tf.concat([acids, inter_values], axis=1)
+        combined_mask = tf.concat([mask, mask[:, 1:]], axis=1)
+
+        inputs = [combined_values, combined_mask, combined_idx]
+
+        lattice = tf.map_fn(self._make_lattice, inputs,
+                            dtype=tf.float32,
+                            parallel_iterations=32,
+                            back_prop=False,
+                            swap_memory=False,
+                            infer_shape=True)
+
+        return tf.expand_dims(lattice, 3)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0][0], 4 * self.N - 3, 4 * self.N - 3, 1
+
+    def _make_lattice(self, data):
+        acids, mask, idx = data
+        masked_idx = tf.boolean_mask(idx, mask, axis=0)
+        masked_acids = tf.boolean_mask(acids, mask, axis=0)
+        return tf.sparse_to_dense(masked_idx, (4 * self.N - 3, 4 * self.N - 3), masked_acids,
+                                  validate_indices=False)
+
+
 class LatticeSnake(keras.layers.Layer):
     def __init__(self, protein_length, window_size, num_threads=4, **kwargs):
         self.protein_length = protein_length
