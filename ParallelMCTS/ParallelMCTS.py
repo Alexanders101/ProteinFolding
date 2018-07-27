@@ -252,6 +252,8 @@ class ParallelMCTS:
                                 graph_options=graph_options,
                                 gpu_options=gpu_options)
 
+        config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.OFF
+
         return config
 
     def set_config(self, **config_opt) -> None:
