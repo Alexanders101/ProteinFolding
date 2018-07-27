@@ -28,6 +28,9 @@ from typing import Callable, Tuple
 from time import sleep
 from concurrent.futures import ThreadPoolExecutor
 
+from multiprocessing import cpu_count
+from tensorflow.python.client import device_lib
+
 
 # noinspection PyPep8Naming
 class ParallelMCTS:
@@ -222,6 +225,34 @@ class ParallelMCTS:
     def DatabaseOptions() -> dict:
         options = {'synchronous': True, 'num_action_threads': 16}
         return options
+
+    @staticmethod
+    def GenerateTensorflowConfig(num_networks: int = 4,
+                                 growth: bool = False,
+                                 gpu_memory_ratio: float = 0.95) -> tf.ConfigProto:
+        num_networks += 1
+
+        num_cpu = cpu_count()
+        num_gpu = len([x for x in device_lib.list_local_devices() if x.device_type == 'GPU'])
+
+        optimizer_options = tf.OptimizerOptions(do_common_subexpression_elimination=True,
+                                                do_constant_folding=True,
+                                                do_function_inlining=True,
+                                                opt_level=tf.OptimizerOptions.L1)
+
+        graph_options = tf.GraphOptions(optimizer_options=optimizer_options)
+
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_memory_ratio / (num_networks / num_gpu),
+                                    allow_growth=growth)
+
+        config = tf.ConfigProto(device_count={'GPU': num_gpu},
+                                allow_soft_placement=True,
+                                intra_op_parallelism_threads=num_cpu,
+                                inter_op_parallelism_threads=num_cpu,
+                                graph_options=graph_options,
+                                gpu_options=gpu_options)
+
+        return config
 
     def set_config(self, **config_opt) -> None:
         """
