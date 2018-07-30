@@ -3,7 +3,6 @@ from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DataProcess import DataProcess
 from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment, np2c
 import numpy as np
-import ctypes
 import os
 import signal
 from time import time
@@ -116,14 +115,14 @@ class SimulationProcess(Process):
         # noinspection PyTupleAssignmentBalance
         not_leaf_node, data = self.database.both_get(idx, state_hash)
         policy = self.root_policy
-        if data is not None:
+        if not_leaf_node:
             N, W, Q, V, _ = data
 
         last_value = None
         done = False
 
         # Loop until leaf node.
-        while not_leaf_node and data is not None:
+        while not_leaf_node:
             # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
             virtual_loss = V * self.virtual_loss
             U = self.C * policy * np.sqrt(N.sum()) / (1 + N)
@@ -171,7 +170,7 @@ class SimulationProcess(Process):
             # Get data and policy cache for the next node
             # noinspection PyTupleAssignmentBalance
             not_leaf_node, data = self.database.both_get(idx, state_hash)
-            if data is not None:
+            if not_leaf_node:
                 N, W, Q, V, policy = data
 
         # Extra Processing done by subclasses.
