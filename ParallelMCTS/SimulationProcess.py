@@ -1,4 +1,4 @@
-from multiprocessing import Process, Array, Event, Value
+from multiprocessing import Process, Array, Event, Value, Barrier
 from ParallelMCTS.NetworkManager import NetworkManager
 from ParallelMCTS.DataProcess import DataProcess
 from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment, np2c
@@ -11,8 +11,8 @@ from time import time
 # noinspection PyAttributeOutsideInit,PyPep8Naming
 class SimulationProcess(Process):
     def __init__(self, idx: int, network_offset: int, env: SinglePlayerEnvironment,
-                 network_manager: NetworkManager, database: DataProcess,
-                 state_buffer_base: Array, state_shape: tuple, mcts_config: dict):
+                 network_manager: NetworkManager, database: DataProcess, state_buffer_base: Array,
+                 state_shape: tuple, simulation_barrier: Barrier, mcts_config: dict):
         super(SimulationProcess, self).__init__()
 
         self.idx = idx
@@ -24,6 +24,7 @@ class SimulationProcess(Process):
         self.starting_state = np.ctypeslib.as_array(state_buffer_base)
         self.starting_state = self.starting_state.reshape(state_shape)
 
+        self.simulation_barrier = simulation_barrier
         self.input_queue = Event()
         self.output_queue = Event()
         self.output_queue.set()
@@ -205,6 +206,7 @@ class SimulationProcess(Process):
         self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
         self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
 
+        self.simulation_barrier.wait()
         # Run simulations until we run out of time.
         start_time = time()
         while (time() - start_time) < self.calculation_time:
@@ -266,11 +268,14 @@ class SimulationProcessManager:
         self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
         self.starting_state = self.starting_state.reshape(env.state_shape)
 
+        self.simulation_barrier = Barrier(num_workers)
+
         network_offset = server_index * num_workers
         self.workers = []
         for idx in range(num_workers):
             worker = worker_class(idx, network_offset, env, network_manager, database,
-                                  self.state_buffer_base, self.state_shape, mcts_config, **worker_args)
+                                  self.state_buffer_base, self.state_shape, self.simulation_barrier,
+                                  mcts_config, **worker_args)
             self.workers.append(worker)
 
     def start(self) -> None:
