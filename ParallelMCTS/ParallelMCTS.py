@@ -240,7 +240,7 @@ class ParallelMCTS:
 
         graph_options = tf.GraphOptions(optimizer_options=optimizer_options)
 
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_memory_ratio / (num_networks / num_gpu),
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_memory_ratio / num_networks,
                                     allow_growth=growth)
 
         config = tf.ConfigProto(device_count={'GPU': num_gpu},

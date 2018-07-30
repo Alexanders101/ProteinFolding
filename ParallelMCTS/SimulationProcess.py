@@ -147,8 +147,8 @@ class SimulationProcess(Process):
             # Bail if we have encountered a dead end
             if best_action_idx is None:
                 last_value = 0
-                if self.verbose >= 1:
-                    print("Dead End Found")
+                # if self.verbose >= 1:
+                #     print("Dead End Found")
                 break
 
             # Get result of action and add a visit count to database
@@ -206,7 +206,9 @@ class SimulationProcess(Process):
         self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
         self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
 
+        # Synchronize all of the workers so the databases are in sync.
         self.simulation_barrier.wait()
+
         # Run simulations until we run out of time.
         start_time = time()
         while (time() - start_time) < self.calculation_time:

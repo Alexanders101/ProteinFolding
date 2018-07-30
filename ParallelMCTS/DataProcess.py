@@ -42,7 +42,10 @@ class BaseDatabase:
         self.output_queue[idx].set()
 
     def __backup(self, key, action, last_value):
-        store = self.data[key]
+        try:
+            store = self.data[key]
+        except KeyError:
+            return
         store[0, action] += 1
         store[1, action] += last_value
         store[2, action] = store[1, action] / store[0, action]
