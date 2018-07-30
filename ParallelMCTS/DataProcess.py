@@ -82,8 +82,8 @@ class BaseDatabase:
         self.__is_in_tree(idx, key)
 
     def __add_data_and_tree(self, idx, key):
-        self.__add(idx, key)
         self.__add_to_tree(idx, key)
+        self.__add(idx, key)
 
     def run_command(self, idx, command, key, action, last_value):
         if command == 0:
