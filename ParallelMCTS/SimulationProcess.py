@@ -116,9 +116,9 @@ class SimulationProcess(Process):
         # noinspection PyTupleAssignmentBalance
         not_leaf_node, data = self.database.both_get(idx, state_hash)
         policy = self.root_policy
-        if not_leaf_node:
-            N, W, Q, V, _ = data
+        N, W, Q, V, _ = data
 
+        # Local Data
         last_value = None
         done = False
 
@@ -151,28 +151,28 @@ class SimulationProcess(Process):
                 #     print("Dead End Found")
                 break
 
-            # Get result of action and add a visit count to database
-            next_state = self.env.next_state(state, self.env.moves[best_action_idx])
+            # Update databases after visiting this node.
+            simulation_path.append((state_hash, best_action_idx))
             self.database.visit(state_hash, best_action_idx)
             self.num_nodes += 1
 
-            # Update loop variables
-            simulation_path.append((state_hash, best_action_idx))
-            state = next_state
+            # Take the simulated step.
+            state = self.env.next_state(state, self.env.moves[best_action_idx])
             state_hash = self.env.hash(state)
 
-            # If we reach the end of the tree, break out.
+            # If we reach the end of the game, break out.
             if self.env.done(state):
                 done = True
                 if self.backup_true_value:
                     last_value = self.env.reward(state)
                 break
 
-            # Get data and policy cache for the next node
-            # noinspection PyTupleAssignmentBalance
-            not_leaf_node, data = self.database.both_get(idx, state_hash)
-            if not_leaf_node:
-                N, W, Q, V, policy = data
+            # Otherwise predict on the new state and repeat.
+            else:
+                # noinspection PyTupleAssignmentBalance
+                not_leaf_node, data = self.database.both_get(idx, state_hash)
+                if not_leaf_node:
+                    N, W, Q, V, policy = data
 
         # Extra Processing done by subclasses.
         self._process_paths(idx, done, last_value, simulation_path)
@@ -238,9 +238,11 @@ class SimulationProcess(Process):
         self.num_nodes = 0
 
         while True:
+            # Wait for new input to be ready
             self.input_queue.wait()
-            self.input_queue.clear()
             command = self.input_param.value
+
+            self.input_queue.clear()
 
             if command == -1:
                 break
