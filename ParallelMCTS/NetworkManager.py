@@ -251,12 +251,14 @@ class NetworkManager(Process):
     def __str__(self):
         cluster_spec = self.cluster_spec.as_dict()
 
-        out = [super(NetworkManager, self).__str__()]
-        out.append("="*60)
+        out = ["=" * 60]
+        out.append(super(NetworkManager, self).__str__())
+        out.append("-"*60)
         out.append("Number of Prediction Networks: {}".format(self.num_networks))
         out.append("Number of Parameter Servers: {}".format(len(cluster_spec['ps'])))
         out.append("")
         out.append("Cluster Specification: ")
+        out.append("-" * 60)
         out.append("    Prediction Network: {}".format(cluster_spec['worker'][0]))
         out.append("-" * 60)
         for i, worker in enumerate(cluster_spec['worker'][1:]):
