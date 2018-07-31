@@ -33,7 +33,7 @@ from multiprocessing import cpu_count
 # noinspection PyPep8Naming
 class ParallelMCTS:
     CONFIG_DEFAULTS = {
-        "calculation_time": 15,
+        "calculation_time": 15.0,
         "C": 1.4,
         "temperature": 1.0,
         "epsilon": 0.3,
