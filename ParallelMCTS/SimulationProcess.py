@@ -234,7 +234,6 @@ class SimulationProcess(Process):
         pass
 
     def run(self):
-        idx = self.idx
         self.num_nodes = 0
 
         while True:
@@ -247,18 +246,18 @@ class SimulationProcess(Process):
             if command == -1:
                 break
 
-            self._run_simulation(idx, command)
-            
+            self._run_simulation(self.idx, command)
+
             self.output_num_nodes.value = self.num_nodes
             self.output_queue.set()
             self.num_nodes = 0
 
 
 class SimulationProcessManager:
-    def __init__(self, server_index: int, num_workers: int, env: SinglePlayerEnvironment,
+    def __init__(self, manager_index: int, num_workers: int, env: SinglePlayerEnvironment,
                  network_manager: NetworkManager, database: DataProcess, mcts_config: dict,
                  *, worker_class: type = SimulationProcess, **worker_args):
-        self.server_index = server_index
+        self.manager_index = manager_index
         self.num_workers = num_workers
         self.env = env
 
@@ -266,19 +265,19 @@ class SimulationProcessManager:
         self.database = database
         self.mcts_config = mcts_config
 
-        self.state_shape = self.env.state_shape
+        state_shape = env.state_shape
         state_type = np2c(env.state_type)
-        self.state_buffer_base = Array(state_type, int(np.prod(env.state_shape)), lock=False)
+        self.state_buffer_base = Array(state_type, int(np.prod(state_shape)), lock=False)
         self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
-        self.starting_state = self.starting_state.reshape(env.state_shape)
+        self.starting_state = self.starting_state.reshape(state_shape)
 
         self.simulation_barrier = Barrier(num_workers)
 
-        network_offset = server_index * num_workers
+        network_offset = manager_index * num_workers
         self.workers = []
-        for idx in range(num_workers):
-            worker = worker_class(idx, network_offset, env, network_manager, database,
-                                  self.state_buffer_base, self.state_shape, self.simulation_barrier,
+        for worker_idx in range(num_workers):
+            worker = worker_class(worker_idx, network_offset, env, network_manager, database,
+                                  self.state_buffer_base, state_shape, self.simulation_barrier,
                                   mcts_config, **worker_args)
             self.workers.append(worker)
 
@@ -307,7 +306,7 @@ class SimulationProcessManager:
         self.starting_state[:] = state.copy()
 
     def simulation(self, clear_tree: bool = True) -> None:
-        """ Being a single simulation run for all workers.
+        """ Begin a single simulation run for all workers.
 
         Parameters
         ----------
@@ -317,111 +316,13 @@ class SimulationProcessManager:
         for worker in self.workers:
             worker.simulation(clear_tree)
 
-    def results(self):
+    def results(self) -> dict:
+        """ Get results of every worker. This method blocks until all workers are finished.
+
+        Returns
+        -------
+        results: dict
+            Dictionary where the keys are the result names and the values are lists of results from each worker.
+        """
         res = [worker.result() for worker in self.workers]
         return {k: [dic[k] for dic in res] for k in res[0]}
-
-
-def __simulation_old(self, idx: int):
-    simulation_path = []
-    state = self.starting_state.copy()
-    state_hash = self.env.hash(self.starting_state)
-
-    # #####
-    # Create the necessary data for the root node
-    # #############################################
-    next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
-    policy, values = self.network_manager._predict_unsafe(idx, next_states)
-    policy = policy[-1]
-    values = values[:-1, 0]
-
-    if self.verbose >= 3:
-        print("Policy: {}".format(policy))
-        print("Value: {}".format(values))
-
-    # Add randomness to the initial policy prediction for exploration
-    epsilon = self.epsilon
-    policy = ((1 - epsilon) * policy) + (epsilon * np.random.dirichlet(self.alpha))
-
-    # #####
-    # Evaluate
-    # ##########
-    ###########################################################
-    t0 = time()
-    ###########################################################
-    done = False
-    last_value = None
-    not_leaf_node, data = self.database.both_get(idx, state_hash)
-    while not_leaf_node:
-        # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
-        N, _, Q, V = data
-        virtual_loss = V * self.virtual_loss
-        U = self.C * policy * np.sqrt(N.sum() + 1) / (1 + N)
-        A = U + Q - virtual_loss
-
-        if self.verbose >= 3:
-            print("Q: {}".format(Q))
-            print("N: {}".format(N))
-            print("U: {}".format(U))
-            print("A: {}".format(A))
-
-        # Get the best valid move for the current state
-        sorted_actions = np.argsort(A)
-        best_action_idx = None
-        legal_choices = self.env.legal(state)
-        for possible_action in reversed(sorted_actions):
-            if possible_action in legal_choices:
-                best_action_idx = possible_action
-                break
-
-        if best_action_idx is None:
-            if self.verbose >= 1:
-                print("Dead End Found")
-            break
-
-        # Get the state of our action and the predicted reward
-        next_state = next_states[best_action_idx]
-        last_value = values[best_action_idx]
-        self.database.visit(state_hash, best_action_idx)
-        self.num_nodes += 1
-
-        # Update loop variables
-        simulation_path.append((state_hash, best_action_idx))
-        state = next_state
-        state_hash = self.env.hash(state)
-
-        # If we reach the end of the tree, break out.
-        if self.env.done(state):
-            done = True
-            if self.backup_true_value:
-                last_value = self.env.reward(state)
-            break
-
-        next_states = np.concatenate((self.env.next_state_multi(state, self.env.moves), np.expand_dims(state, 0)))
-
-        ###########################################################
-        self.run_time.append(time() - t0)
-        t0 = time()
-        ###########################################################
-
-        policy, values = self.network_manager._predict_unsafe(idx, next_states)
-
-        ###########################################################
-        self.pred_time.append(time() - t0)
-        t0 = time()
-        ###########################################################
-
-        policy = policy[-1]
-        values = values[:-1, 0]
-        not_leaf_node, data = self.database.both_get(idx, state_hash)
-
-    # Extra Processing done by subclasses.
-    self._process_paths(idx, done, last_value, simulation_path)
-
-    # Initialize new node
-    self.database.both_add(idx, state_hash)
-
-    # Backup all nodes on path
-    for hash, action in simulation_path:
-        self.database.backup(hash, action, last_value)
-
