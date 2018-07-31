@@ -9,9 +9,10 @@ from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
 
 class OneShotMCTS(ParallelMCTS):
     def __init__(self, env: SinglePlayerEnvironment, make_model: Callable[[], tf.keras.Model],
-                 num_workers: int = 2, num_networks: int = 4, session_config: tf.ConfigProto = None, *,
+                 num_parallel: int = 1, num_workers: int = 2, num_networks: int = 4,
+                 session_config: tf.ConfigProto = None, *,
                  max_to_keep=5, network_options: dict = {}, database_options: dict = {}, **kwargs):
-        super(OneShotMCTS, self).__init__(env, make_model, num_workers, num_networks, session_config,
+        super(OneShotMCTS, self).__init__(env, make_model, num_parallel, num_workers, num_networks, session_config,
                                           simulation_manager=OptimalSimulationProcessManager,
                                           simulation_options={'max_to_keep': max_to_keep},
                                           network_options=network_options,
