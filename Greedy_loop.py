@@ -5,16 +5,22 @@ from ProteinNetworkUtils import Lattice2D
 from tensorflow import keras
 import tensorflow as tf
 
-N=48
+N = 20
 model = make_short_network_2D(N)
-model.compile("adam", loss="MSE", loss_weights=[50, 1])
-#filename = "/Users/danielstephens/weights_saved_Jul23_epoch_good.h5"
-#model.load_weights(filename)
+model.compile("adam", loss=["categorical_crossentropy", "MSE"], loss_weights=[1, 3])
+# filename = "/Users/danielstephens/saved_weights_20/weights_saved_greedy_Jul31_epoch1_19.h5"
+# model.load_weights(filename)
 
 determined_values = True
 
-def diver(protein_env, state, depth, model):
-    if state[1,0] == state.shape[1]-1:
+NUM_EPOCHS = 500
+NUM_SAMPLES = 25
+start = NPProtein(N, 1, 2)
+threshold = 2
+
+
+def diver(state, depth, model):
+    if state[1, 0] == state.shape[1] - 1:
         depth = 1
     if depth == 1:
         num_moves = list(start.legal(state))
@@ -32,48 +38,54 @@ def diver(protein_env, state, depth, model):
             return -10, -10
         mid = np.zeros(len(num_moves))
         for t in range(len(num_moves)):
-            nothin, mid[t] = diver(start, start.next_state(state, num_moves[t]), depth-1, model)
+            nothin, mid[t] = diver(start.next_state(state, num_moves[t]), depth - 1, model)
         idx = np.argmax(mid)
         return num_moves[idx], mid[idx]
 
-NUM_EPOCHS = 200
-NUM_SAMPLES = 50
-start = NPProtein(N, 1, 2)
+
 for x in range(NUM_EPOCHS):
+    mistakes = 0
     count = 0
     count2 = 0
-    y = np.random.randint(20, 30, NUM_SAMPLES)
-    store = np.zeros(((N-1)*NUM_SAMPLES, 4, N), dtype=np.int64)
+    y = np.random.randint(11, 12, NUM_SAMPLES)
+    store = np.zeros(((N - 1) * NUM_SAMPLES, 4, N), dtype=np.int64)
     energies = np.zeros((NUM_SAMPLES, 1))
-    policies = np.zeros(((N-1)*NUM_SAMPLES, 4))
-    values = np.zeros(((N-1)*NUM_SAMPLES, 1))
+    policies = np.zeros(((N - 1) * NUM_SAMPLES, 4))
+    values = np.zeros(((N - 1) * NUM_SAMPLES, 1))
     while count2 < NUM_SAMPLES:
         string = np.zeros(N) + 2
         string[:y[count2]] = 1
         string = np.random.permutation(string)
         state = start.new_state(string)
-        for u in range(N-1):
-            move, value = diver(start, state, 2, model)
-            if move == -10 and value == -10:
-                count = count2*(N-1)
+        for u in range(N - 1):
+            move, value = diver(state, 2, model)
+            if move == -10 or value == -10:
+                count = count2 * (N - 1)
                 break
             store[count] = state
             state = start.next_state(state, move)
             if not determined_values:
-                if u != N-2:
+                if u != N - 2:
                     values[count] = value
                 else:
                     values[count] = start.eval_energy(state)
             policies[count, move] = 1
             count += 1
-        energies[count2] = start.eval_energy(state)
-        count2 += 1
+        energy = start.eval_energy(state)
+        if energy < threshold:
+            count = count2 * (N - 1)
+            mistakes += 1
+        else:
+            energies[count2] = energy
+            count2 += 1
     print(np.mean(energies), np.max(energies))
+    print("# of discarded folds : {}".format(mistakes))
+    threshold = np.percentile(energies, 50)
     if determined_values:
-        values = np.repeat(energies, N-1) + 1
-    filepath="weights_saved_greedy_Jul27_epoch_{}.h5".format(x)
-    #checkpoint = keras.callbacks.ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=False, mode='max')
-    #callbacks_list = [checkpoint]
+        values = np.repeat(energies + 1, N - 1)
+    filepath = "saved_weights_20/weights_saved_greedy_Jul31_epoch0_{}.h5".format(x)
+    # checkpoint = keras.callbacks.ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=False, mode='max')
+    # callbacks_list = [checkpoint]
     print("Epoch {}".format(x))
     model.fit(x=store, y=[policies, values])
     model.save_weights(filepath)
