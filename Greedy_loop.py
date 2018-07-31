@@ -1,19 +1,32 @@
-from Arch2D import make_short_network_2D
+from os import environ
+environ['CUDA_VISIBLE_DEVICES'] = ''
+
+from Arch2D import make_short_network_2D_greedy
 import numpy as np
 from ProteinEnv import NPProtein
 from ProteinNetworkUtils import Lattice2D
 from tensorflow import keras
 import tensorflow as tf
 
-N = 20
-model = make_short_network_2D(N)
-model.compile("adam", loss=["categorical_crossentropy", "MSE"], loss_weights=[1, 3])
-# filename = "/Users/danielstephens/saved_weights_20/weights_saved_greedy_Jul31_epoch1_19.h5"
-# model.load_weights(filename)
+CONFIG = tf.ConfigProto(device_count = {'GPU': 0}, 
+                        log_device_placement=True, 
+                        allow_soft_placement=True,
+                        intra_op_parallelism_threads=32,
+                        inter_op_parallelism_threads=32)
+CONFIG.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
+
+sess = tf.Session(config=CONFIG)
+keras.backend.set_session(sess)
+
+N=20
+model = make_short_network_2D_greedy(N)
+model.compile("adam", loss=["categorical_crossentropy", "MSE"], loss_weights=[10, 1])
+#filename = "/Users/danielstephens/weights_saved_Jul23_epoch_good.h5"
+#model.load_weights(filename)
 
 determined_values = True
 
-NUM_EPOCHS = 500
+NUM_EPOCHS = 1000
 NUM_SAMPLES = 25
 start = NPProtein(N, 1, 2)
 threshold = 2

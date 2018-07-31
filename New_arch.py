@@ -55,6 +55,7 @@ distr_48=np.array([[0,0,0,0,0,0,0,1,1,2,2,3,4,4,5,6,7,8,10,10,12,13,14,16,17,19,
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]])
 
 def make_short_network(max_aa, lattice_size=5):
+    drop_rate = 0.3
     inp = keras.layers.Input(shape=(5, max_aa), dtype=tf.int64)
 
     # Reshape Inputs
@@ -66,26 +67,36 @@ def make_short_network(max_aa, lattice_size=5):
     # Construct Lattice and apply convolutions across time axis
     lattice = ProteinNetworkUtils.LatticeSnake(max_aa, lattice_size)([acids, mask, indices])
 
-    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(64, (5, 5, 5), padding="valid"))(lattice)
+    conv = keras.layers.TimeDistributed(keras.layers.Conv3D(32, (5, 5, 5), padding="valid"))(lattice)
     conv = keras.layers.TimeDistributed(keras.layers.BatchNormalization())(conv)
+    conv = keras.layers.Dropout(drop_rate)(conv)
     conv = keras.layers.Activation('relu')(conv)
 
     acids = keras.layers.Reshape((max_aa, 1))(acids)
-    conv = keras.layers.Reshape((max_aa, 64))(conv)
+    conv = keras.layers.Reshape((max_aa, 32))(conv)
     conv = keras.layers.concatenate([conv, acids], axis=2)
     reverse = keras.layers.Lambda(lambda x: tf.reverse_sequence(x[0], seq_lengths=tf.cast(x[1], tf.int64), seq_axis=1))([conv, aa_length])
 
-    forward_lstm = keras.layers.LSTM(16, return_sequences=True)(conv)
-    backward_lstm = keras.layers.LSTM(16, return_sequences=True)(reverse)
+    forward_lstm = keras.layers.CuDNNLSTM(8, return_sequences=True)(conv)
+#     forward_lstm = keras.layers.LSTM(8, return_sequences=True)(conv)
+    forward_lstm = keras.layers.Dropout(drop_rate)(forward_lstm)
+    backward_lstm = keras.layers.CuDNNLSTM(8, return_sequences=True)(reverse)
+#     backward_lstm = keras.layers.LSTM(8, return_sequences=True)(reverse)
+    backward_lstm = keras.layers.Dropout(drop_rate)(backward_lstm)
     bi_lstm = keras.layers.concatenate([forward_lstm, backward_lstm], axis=2)
+    bi_lstm = keras.layers.BatchNormalization()(bi_lstm)
 
     final = keras.layers.Flatten()(bi_lstm)
-    pol_fin = keras.layers.Dense(256, activation='relu')(final)
-    pol_fin = keras.layers.Dense(64, activation='relu')(pol_fin)
-    pol_fin = keras.layers.Dense(6, activation='relu')(pol_fin)
+    pol_fin = keras.layers.Dense(128, activation='relu')(final)
+    pol_fin = keras.layers.BatchNormalization()(pol_fin)
+    #pol_fin = keras.layers.Dropout(drop_rate)(pol_fin)
+    pol_fin = keras.layers.Dense(64, activation='sigmoid')(pol_fin)
+    pol_fin = keras.layers.Dense(6, activation=None)(pol_fin)
 
-    final = keras.layers.Dense(256, activation='relu')(final)
-    final = keras.layers.Dense(64, activation='relu')(final)
+    final = keras.layers.Dense(32, activation='relu')(final)
+    final = keras.layers.BatchNormalization()(final)
+    final = keras.layers.Dropout(drop_rate)(final)
+    #final = keras.layers.Dense(64, activation='relu')(final)
     final = keras.layers.Dense(1, activation=None)(final)
 
     model = keras.Model(inp, [pol_fin, final])

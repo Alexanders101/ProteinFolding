@@ -45,6 +45,7 @@ class BaseDatabase:
         try:
             store = self.data[key]
         except KeyError:
+            print("BADADADADADADADUM")
             return
         store[0, action] += 1
         store[1, action] += last_value
