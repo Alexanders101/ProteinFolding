@@ -7,7 +7,7 @@ from typing import Tuple, Optional, Callable, Generator
 DefinitionType = Optional[Tuple[Callable[[], SinglePlayerEnvironment], Callable[[], keras.Model]]]
 
 
-def parse_args() -> Tuple[str, str]:
+def parse_args() -> Tuple[str, str, bool]:
     """ Parse the inputs into MCTSTrain and extract the two input strings.
 
     Returns
@@ -21,15 +21,18 @@ def parse_args() -> Tuple[str, str]:
                         help="File containing the environment and network definition.")
     parser.add_argument("config_file", type=str,
                         help="INI file containing MCTS config options.")
+    parser.add_argument("-n", "--noconfirm", action="store_true",
+                        help="Disable confirmation dialog before training.")
 
     args: Namespace = parser.parse_args()
     definition_file: str = args.definition_file
     config_file: str = args.config_file
+    noconfirm: bool = args.noconfirm
 
     assert definition_file.split('.')[-1] == 'py', "ARGUMENT: definition_file must be a python file."
     assert config_file.split('.')[-1] == 'ini', "ARGUMENT: config_file must be an INI file."
 
-    return definition_file, config_file
+    return definition_file, config_file, noconfirm
 
 
 def import_definitions(definition_file: str) -> DefinitionType:
@@ -172,31 +175,43 @@ def to_infinity() -> Generator:
         index += 1
 
 
-def train(mcts_config: dict) -> None:
+def train(mcts_config: dict, confirm: bool) -> None:
     num_games = mcts_config['num_games']
     num_epochs = mcts_config['num_epochs']
     num_parallel = mcts_config['num_parallel']
     num_workers = mcts_config['num_workers']
     num_networks = mcts_config['num_networks']
+    time_per_move = mcts_config['calculation_time']
+    game_length = mcts_config['env'].max_length
     
-    mcts_config['train_buffer_size'] = mcts_config['env'].max_length * num_parallel * num_games * 2
+    mcts_config['network_options']['train_buffer_size'] = game_length * num_parallel * num_games * 2
     mcts = ParallelMCTS(**mcts_config)
 
     print("=" * 60)
     print("Training Options")
     print("-" * 60)
-    print("Parallel Training Loops: {}".format(num_parallel))
+    print("Number of Parallel Training Loops: {}".format(num_parallel))
     print("Number of Workers: {}".format(num_workers))
     print("Number of Prediction Networks: {}".format(num_networks))
-    print()
+    print("-" * 60)
     print("Number of Epochs: {}".format(num_epochs if num_epochs > 0 else "Infinity"))
     print("Number of Games per epoch: {}".format(num_games * num_parallel))
+    print("-" * 60)
+    _time_per_game = game_length * time_per_move + 1
+    print(f"Time per game: {_time_per_game:.3f} seconds")
+    print(f"Time per loop: {num_games * _time_per_game / 60:.3f} minutes")
+    print(f"Samples per loop: {game_length*num_games*num_parallel}")
+    print(f"Samples per second: {game_length*num_games*num_parallel / (num_games * _time_per_game):.3f}")
+    print(f"Number of Processes to Create: {(num_workers+1) * num_parallel + (num_networks + 1 + 2)*40 + 8}")
     print("=" * 60)
     print()
     print(mcts)
     print()
     print(mcts.network_manager)
     print("\n\n")
+
+    if confirm:
+        input("Press Enter to begin training or CTRL-C to cancel: ")
 
     loop = to_infinity() if num_epochs < 0 else range(num_epochs)
     with mcts:
@@ -211,13 +226,13 @@ def train(mcts_config: dict) -> None:
 
 
 def main():
-    definition_file, config_file = parse_args()
+    definition_file, config_file, no_confirm = parse_args()
     mcts_config = parse_config(config_file)
 
     definitions = import_definitions(definition_file)
     if definitions is None:
         print("Exiting")
-        exit()
+        return
     make_env, make_model = definitions
 
     env = make_env()
@@ -226,7 +241,7 @@ def main():
     mcts_config['env'] = env
     mcts_config['make_model'] = make_model
 
-    train(mcts_config)
+    train(mcts_config, not no_confirm)
 
 
 if __name__ == '__main__':
