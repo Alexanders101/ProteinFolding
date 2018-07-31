@@ -178,7 +178,8 @@ def train(mcts_config: dict) -> None:
     num_parallel = mcts_config['num_parallel']
     num_workers = mcts_config['num_workers']
     num_networks = mcts_config['num_networks']
-
+    
+    mcts_config['train_buffer_size'] = mcts_config['env'].max_length * num_parallel * num_games * 2
     mcts = ParallelMCTS(**mcts_config)
 
     print("=" * 60)
