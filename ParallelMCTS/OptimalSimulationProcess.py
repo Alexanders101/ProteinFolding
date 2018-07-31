@@ -16,10 +16,10 @@ from ParallelMCTS.SinglePlayerEnvironment import SinglePlayerEnvironment
 
 
 class OptimalSimulationProcessManager(SimulationProcessManager):
-    def __init__(self, server_index: int, num_workers: int, env: SinglePlayerEnvironment,
+    def __init__(self, manager_index: int, num_workers: int, env: SinglePlayerEnvironment,
                  network_manager: NetworkManager, database: DataProcess, mcts_config: dict,
                  max_to_keep: int = 10):
-        super(OptimalSimulationProcessManager, self).__init__(server_index, num_workers, env,
+        super(OptimalSimulationProcessManager, self).__init__(manager_index, num_workers, env,
                                                               network_manager, database, mcts_config,
                                                               worker_class=OptimalSimulationProcess,
                                                               max_to_keep=max_to_keep)

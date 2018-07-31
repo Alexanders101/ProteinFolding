@@ -46,7 +46,7 @@ class ParallelMCTS:
 
     # noinspection PyDefaultArgument
     def __init__(self, env: SinglePlayerEnvironment, make_model: Callable[[], tf.keras.Model],
-                 num_games: int = 1, num_workers: int = 2, num_networks: int = 4,
+                 num_parallel: int = 1, num_workers: int = 2, num_networks: int = 4,
                  session_config: tf.ConfigProto = None, *,
                  simulation_manager: type = SimulationProcessManager, simulation_options: dict = {},
                  network_options: dict = {}, database_options: dict = {}, **kwargs):
@@ -60,7 +60,7 @@ class ParallelMCTS:
         make_model : () -> keras.Model
             A function defining how to create your model.
             The resulting network has the following signature: State -> (Policy, Value)
-        num_games : int
+        num_parallel : int
             Number of maximum parallel games to play.
         num_workers : int
             Number of simulation workers for a single game.
@@ -107,10 +107,10 @@ class ParallelMCTS:
         self.state_shape = tuple(self.env.state_shape)
 
         # Class parameters
-        self.num_games = num_games
+        self.num_parallel = num_parallel
         self.num_workers = num_workers
         self.num_networks = num_networks
-        self.num_total_workers = num_workers * num_games
+        self.num_total_workers = num_workers * num_parallel
 
         # Run Dynamic Config setup
         self.set_config(**kwargs)
@@ -118,21 +118,21 @@ class ParallelMCTS:
         # Fix alpha to be an array of alphas
         self.alpha = np.repeat(self.alpha, repeats=self.num_moves)
 
-        # Setup Networks
+        # Setup Network Manager. There is only one manager that will be shared across all parallel simulations.
         self.network_manager = NetworkManager(make_network=make_model,
                                               state_shape=self.state_shape,
                                               state_type=env.state_type,
-                                              num_moves=self.num_moves,
+                                              num_moves=env.num_moves,
                                               num_states=1,
                                               num_workers=self.num_total_workers,
-                                              num_networks=num_networks,
+                                              num_networks=self.num_networks,
                                               session_config=session_config,
                                               **network_options)
 
-        # Simulation Workers and Database setup
+        # Setup Simulation Workers and Database
         self.databases = []
         self.workers = []
-        for idx in range(num_games):
+        for idx in range(num_parallel):
             database = DataProcess(self.num_moves, num_workers, single_tree=self.single_tree, **database_options)
             worker = simulation_manager(idx, num_workers, env, self.network_manager, database, self.get_config(),
                                         **simulation_options)
@@ -140,8 +140,9 @@ class ParallelMCTS:
             self.workers.append(worker)
 
         # Thread pool for multi-train
-        self.worker_thread_pool = ThreadPoolExecutor(max_workers=num_games)
+        self.worker_thread_pool = ThreadPoolExecutor(max_workers=num_parallel)
 
+    # region ControlMethods
     def start(self, training_network_wait_time: float = 3):
         print("Starting Networks")
         print("="*60)
@@ -183,7 +184,9 @@ class ParallelMCTS:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.shutdown()
+    # endregion
 
+    # region PrintingMethods
     # noinspection PyListCreation
     def __str__(self):
         out = []
@@ -204,7 +207,9 @@ class ParallelMCTS:
 
     def __repr__(self):
         return self.__str__()
+    # endregion
 
+    # region StaticOptionMethods
     @staticmethod
     def MCTSOptions() -> dict:
         return ParallelMCTS.CONFIG_DEFAULTS.copy()
@@ -253,7 +258,9 @@ class ParallelMCTS:
         config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.OFF
 
         return config
+    # endregion
 
+    # region ConfigMethods
     def set_config(self, **config_opt) -> None:
         """
         Create Optional Configuration variables for the Class.
@@ -265,7 +272,6 @@ class ParallelMCTS:
         Parameters
         ----------
         config_opt : CONFIG_DEFAULTS
-
         """
         for name, default in self.CONFIG_DEFAULTS.items():
             if name in config_opt:
@@ -279,6 +285,7 @@ class ParallelMCTS:
         for name in self.CONFIG_DEFAULTS:
             out[name] = self.__getattribute__(name)
         return out
+    # endregion
 
     def clear(self, idx: int) -> None:
         """ Clear all of the simulation memory.
@@ -305,7 +312,7 @@ class ParallelMCTS:
         values = []
 
         futures = []
-        for worker_idx in range(self.num_games):
+        for worker_idx in range(self.num_parallel):
             future = self.worker_thread_pool.submit(self._fit_epoch_multi_work, worker_idx, num_games_per_worker,
                                                     states, policies, values)
             futures.append(future)
