@@ -35,17 +35,19 @@ class OneShotMCTS(ParallelMCTS):
         if clear:
             self.clear(worker_idx)
 
+        worker = self.workers[worker_idx]
+
         # Start simulation on new state
-        self.workers.set_start_state(start_state)
-        self.workers.simulation(clear_tree=True)
+        worker.set_start_state(start_state)
+        worker.simulation(clear_tree=True)
 
         # Block and wait for results
-        results = self.workers.results()
+        results = worker.results()
 
         if self.verbose >= 2:
-            print("{} Nodes per second".format(np.mean(results['nodes_per_second'])))
+            print("{} Nodes per second".format(np.sum(results['total_nodes']) / self.calculation_time))
 
-        return self.workers.get_optimal_solutions()
+        return worker.get_optimal_solutions()
 
     def fit_epoch_single(self, num_games: int = 1, worker_idx: int = 0):
         raise NotImplementedError("Training Not implemented for OneshotMCTS yet.")
