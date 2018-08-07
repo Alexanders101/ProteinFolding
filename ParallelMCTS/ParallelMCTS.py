@@ -245,8 +245,7 @@ class ParallelMCTS:
 
         graph_options = tf.GraphOptions(optimizer_options=optimizer_options)
 
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_memory_ratio / num_networks,
-                                    allow_growth=growth)
+        gpu_options = tf.GPUOptions(allow_growth=growth)
 
         config = tf.ConfigProto(device_count={'GPU': num_gpu},
                                 allow_soft_placement=True,
@@ -404,7 +403,7 @@ class ParallelMCTS:
 
             # Run simulation to compute policy
             pi = self.select_moves(worker_idx, state)
-
+            
             # Store game data in buffer
             states[t, :] = state
             pis[t, :] = pi
@@ -414,7 +413,11 @@ class ParallelMCTS:
             for move_idx in range(self.num_moves):
                 if move_idx not in legal_moves:
                     pi[move_idx] = 0
-
+            
+            # Softmax
+            pi = np.exp(pi)
+            pi /= np.sum(pi)
+            
             # Sample from policy and make next move
             next_move = np.random.choice(pi.shape[0], p=pi)
             state = self.env.next_state(state, self.env.moves[next_move])
