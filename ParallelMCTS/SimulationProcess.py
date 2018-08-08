@@ -33,6 +33,7 @@ class SimulationProcess(Process):
         self.input_param = Value('l', 0, lock=False)
         self.output_num_nodes = Value('l', 0, lock=False)
 
+        self.single_tree = mcts_config['single_tree']
         self.calculation_time = mcts_config['calculation_time']
         self.C = mcts_config['C']
         self.epsilon = mcts_config['epsilon']
@@ -179,7 +180,8 @@ class SimulationProcess(Process):
         # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
         self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
         self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
-        self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
+        if (not self.single_tree) or (self.single_tree and idx == 0):
+            self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
 
         # Synchronize all of the workers so the databases are in sync.
         self.simulation_barrier.wait()
