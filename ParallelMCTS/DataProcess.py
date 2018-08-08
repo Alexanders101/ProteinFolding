@@ -45,8 +45,8 @@ class BaseDatabase:
         try:
             store = self.data[key]
         except KeyError:
-            print("BADADADADADADADUM")
             return
+
         store[0, action] += 1
         store[1, action] += last_value
         store[2, action] = store[1, action] / store[0, action]
@@ -54,7 +54,12 @@ class BaseDatabase:
         store[3, action] -= 1
 
     def __visit(self, key, action):
-        self.data[key][3, action] += 1
+        try:
+            store = self.data[key]
+        except KeyError:
+            return
+
+        store[3, action] += 1
 
     def __clear(self):
         self.data.clear()
@@ -233,7 +238,7 @@ class DataProcess(Process, BaseDatabase):
         self.policy_buffer[idx, :] = policy
 
         command = DataProcessCommand.Add
-        self.input_queue.put((0, command, key, 0, 0))
+        self.input_queue.put((0, command, key, 0, 0.0))
 
     def get(self, idx: int, key) -> Optional[np.ndarray]:
         """ Get data associated with a given state. This command Blocks until finished.
@@ -256,7 +261,7 @@ class DataProcess(Process, BaseDatabase):
         """
         command = DataProcessCommand.Get
         self.done_clear(idx)
-        self.input_queue.put((idx, command, key, 0, 0))
+        self.input_queue.put((idx, command, key, 0, 0.0))
 
         self.wait_for_done(idx)
 
@@ -290,12 +295,12 @@ class DataProcess(Process, BaseDatabase):
             Action performed at that state.
         """
         command = DataProcessCommand.Visit
-        self.input_queue.put((0, command, key, action, 0))
+        self.input_queue.put((0, command, key, action, 0.0))
 
     def clear(self) -> None:
         """ Clear the database. This function is non-blocking."""
         command = DataProcessCommand.Clear
-        self.input_queue.put((0, command, 0, 0, 0))
+        self.input_queue.put((0, command, 0, 0, 0.0))
 
     def tree_add(self, idx: int, key) -> None:
         """ Add a new state to this workers tree. If single_tree is on, then it will add the state to the main tree.
@@ -310,7 +315,7 @@ class DataProcess(Process, BaseDatabase):
             Hashable version of state to add.
         """
         command = DataProcessCommand.TreeAdd
-        self.input_queue.put((idx, command, key, 0, 0))
+        self.input_queue.put((idx, command, key, 0, 0.0))
 
     def tree_get(self, idx: int, key) -> bool:
         """ Get wether or not a given state is in this worker's tree. This function blocks until the result is done.
@@ -330,7 +335,7 @@ class DataProcess(Process, BaseDatabase):
         command = DataProcessCommand.TreeGet
 
         self.done_clear(idx)
-        self.input_queue.put((idx, command, key, 0, 0))
+        self.input_queue.put((idx, command, key, 0, 0.0))
 
         self.wait_for_done(idx)
         return self.tree_buffer[idx]
@@ -344,7 +349,7 @@ class DataProcess(Process, BaseDatabase):
             Worker Index. Ignored if single_tree=True.
         """
         command = DataProcessCommand.TreeClear
-        self.input_queue.put((idx, command, 0, 0, 0))
+        self.input_queue.put((idx, command, 0, 0, 0.0))
 
     def both_get(self, idx: int, key) -> Tuple[bool, Optional[np.ndarray]]:
         """ Get whether or not the state is in the tree and the data associated with the state.
