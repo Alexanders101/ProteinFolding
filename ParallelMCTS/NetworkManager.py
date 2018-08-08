@@ -325,8 +325,12 @@ class NetworkManager(Process):
         policy : np.ndarray[float, [num_moves]]
         value : float
         """
-        policy, value = self.predict(idx, np.expand_dims(state, 0))
-        return policy[0], value[0, 0]
+        self.input_buffer[idx, 0] = state[:]
+        self.output_ready[idx].clear()
+        self.input_queue.put_nowait(idx)
+
+        self.output_ready[idx].wait()
+        return self.policy_buffer[idx, 0], self.value_buffer[idx, 0, 0]
 
     def _predict_unsafe(self, idx, states):
         num_samples = states.shape[0]
