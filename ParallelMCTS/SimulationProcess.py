@@ -101,7 +101,7 @@ class SimulationProcess(Process):
         N, W, Q, V, _ = data
 
         # Local Data
-        i = 0
+        num_moves = 0
         last_value = None
         done = False
 
@@ -129,7 +129,7 @@ class SimulationProcess(Process):
 
             # Bail if we have encountered a dead end
             if best_action_idx is None:
-                last_value = self.env.reward(state) - self.env.max_length + i
+                last_value = self.env.reward(state) - self.env.max_length + num_moves
                 break
 
             # Update databases after visiting this node.
@@ -154,7 +154,7 @@ class SimulationProcess(Process):
                 not_leaf_node, data = self.database.both_get(idx, state_hash)
                 if not_leaf_node:
                     N, W, Q, V, policy = data
-            i += 1
+            num_moves += 1
 
         # Extra Processing done by subclasses.
         self._process_paths(idx, done, last_value, simulation_path)
@@ -177,6 +177,8 @@ class SimulationProcess(Process):
         idx : int
             Worker index.
         """
+        self.num_nodes = 0
+
         # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
         self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
         self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
@@ -187,9 +189,14 @@ class SimulationProcess(Process):
         self.simulation_barrier.wait()
 
         # Run simulations until we run out of time.
-        start_time = time()
-        while (time() - start_time) < self.calculation_time:
-            self._simulation(idx)
+        if self.calculation_time > 0:
+            start_time = time()
+            while (time() - start_time) < self.calculation_time:
+                self._simulation(idx)
+        else:
+            max_nodes = -self.calculation_time
+            while self.num_nodes < max_nodes:
+                self._simulation(idx)
 
     def _process_paths(self, idx: int, done: bool, last_value: float, simulation_path) -> None:
         """ Overwrite this method in specializations of SimulationProcess.
@@ -231,7 +238,6 @@ class SimulationProcess(Process):
 
             self.output_num_nodes.value = self.num_nodes
             self.output_ready.set()
-            self.num_nodes = 0
 
 
 class SimulationProcessManager:
