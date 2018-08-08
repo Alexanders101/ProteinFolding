@@ -20,14 +20,15 @@ class SimulationProcess(Process):
         self.database = database
         self.network_manager = network_manager
         self.network_offset = network_offset
+        self.network_idx = network_offset + idx
 
         self.starting_state = np.ctypeslib.as_array(state_buffer_base)
         self.starting_state = self.starting_state.reshape(state_shape)
 
         self.simulation_barrier = simulation_barrier
-        self.input_queue = Event()
-        self.output_queue = Event()
-        self.output_queue.set()
+        self.input_ready = Event()
+        self.output_ready = Event()
+        self.output_ready.set()
 
         self.input_param = Value('l', 0, lock=False)
         self.output_num_nodes = Value('l', 0, lock=False)
@@ -43,11 +44,11 @@ class SimulationProcess(Process):
     def shutdown(self) -> None:
         """ Shutdown this simulation server. Blocks until simulation server is free.
         """
-        self.output_queue.wait()
-        self.output_queue.clear()
+        self.output_ready.wait()
+        self.output_ready.clear()
 
         self.input_param.value = -1
-        self.input_queue.set()
+        self.input_ready.set()
 
     def simulation(self, clear_tree: bool = True) -> None:
         """ Queue a single simulation run.
@@ -58,15 +59,15 @@ class SimulationProcess(Process):
             Whether or not to clear the simulation tree for this simulation.
             This is useful if you want to split the simulation into multiple batches.
         """
-        self.output_queue.wait()
-        self.output_queue.clear()
+        self.output_ready.wait()
+        self.output_ready.clear()
 
         if clear_tree:
             self.input_param.value = 0
         else:
             self.input_param.value = 1
 
-        self.input_queue.set()
+        self.input_ready.set()
 
     def result(self) -> dict:
         """ Block until simulation has finished and get the result dictionary.
@@ -76,28 +77,8 @@ class SimulationProcess(Process):
         result_dict : dict
             Dictionary of various simulation statistics.
         """
-        self.output_queue.wait()
+        self.output_ready.wait()
         return {'total_nodes': self.output_num_nodes.value}
-
-    def _predict_single_node(self, idx: int, state: np.ndarray):
-        """ Use network to predict on a single state.
-
-        Parameters
-        ----------
-        idx : int
-            Worker index.
-        state : np.ndarray
-            A NON-BATCHED single state.
-
-        Returns
-        -------
-        policy : np.ndarray
-            The policy prediction for this state.
-        value : float
-            The value prediction for this state.
-        """
-        policy, value = self.network_manager.predict(self.network_offset + idx, np.expand_dims(state, 0))
-        return policy[0], value[0, 0]
 
     # noinspection PyUnboundLocalVariable
     def _simulation(self, idx: int):
@@ -178,7 +159,7 @@ class SimulationProcess(Process):
         self._process_paths(idx, done, last_value, simulation_path)
 
         # Initialize new node
-        policy, value = self._predict_single_node(idx, state)
+        policy, value = self.network_manager.predict_single(self.network_idx, state)
         self.database.both_add(idx, state_hash, policy)
         if last_value is None:
             last_value = value
@@ -187,22 +168,16 @@ class SimulationProcess(Process):
         for state_hash, action in simulation_path:
             self.database.backup(state_hash, action, last_value)
 
-    def _run_simulation(self, idx: int, command: int) -> None:
+    def _run_simulation(self, idx: int) -> None:
         """ Start an MCTS simulation for the configured time.
 
         Parameters
         ----------
         idx : int
             Worker index.
-        command : int
-            Command received.
         """
-        # Clear search tree for new simulation.
-        if command == 0:
-            self.database.tree_clear(idx)
-
         # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
-        self.root_policy, self.root_value = self._predict_single_node(idx, self.starting_state.copy())
+        self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
         self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
         self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
 
@@ -238,18 +213,22 @@ class SimulationProcess(Process):
 
         while True:
             # Wait for new input to be ready
-            self.input_queue.wait()
+            self.input_ready.wait()
             command = self.input_param.value
+            self.input_ready.clear()
 
-            self.input_queue.clear()
-
+            # Exit command
             if command == -1:
                 break
 
-            self._run_simulation(self.idx, command)
+            # Clear search tree for new simulation.
+            if command == 0:
+                self.database.tree_clear(self.idx)
+
+            self._run_simulation(self.idx)
 
             self.output_num_nodes.value = self.num_nodes
-            self.output_queue.set()
+            self.output_ready.set()
             self.num_nodes = 0
 
 
@@ -292,7 +271,7 @@ class SimulationProcessManager:
         for idx, worker in enumerate(self.workers):
             if worker.pid:
                 print(" {}".format(idx), end="")
-                os.kill(worker.pid, signal.SIGKILL)
+                os.kill(worker.pid, signal.SIGTERM)
         print()
 
     def set_start_state(self, state: np.ndarray) -> None:
