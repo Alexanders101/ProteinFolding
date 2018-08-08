@@ -100,6 +100,7 @@ class SimulationProcess(Process):
         N, W, Q, V, _ = data
 
         # Local Data
+        i = 0
         last_value = None
         done = False
 
@@ -127,9 +128,7 @@ class SimulationProcess(Process):
 
             # Bail if we have encountered a dead end
             if best_action_idx is None:
-                last_value = 0
-                # if self.verbose >= 1:
-                #     print("Dead End Found")
+                last_value = self.env.reward(state) - self.env.max_length + i
                 break
 
             # Update databases after visiting this node.
@@ -154,6 +153,7 @@ class SimulationProcess(Process):
                 not_leaf_node, data = self.database.both_get(idx, state_hash)
                 if not_leaf_node:
                     N, W, Q, V, policy = data
+            i += 1
 
         # Extra Processing done by subclasses.
         self._process_paths(idx, done, last_value, simulation_path)
