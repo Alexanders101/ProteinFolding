@@ -96,9 +96,8 @@ class SimulationProcess(Process):
 
         # Create the necessary data for the root node
         # noinspection PyTupleAssignmentBalance
-        not_leaf_node, data = self.database.both_get(idx, state_hash)
+        not_leaf_node, (N, W, Q, V, _) = self.database.both_get(idx, state_hash)
         policy = self.root_policy
-        N, W, Q, V, _ = data
 
         # Local Data
         num_moves = 0
@@ -119,9 +118,10 @@ class SimulationProcess(Process):
                 print("A: {}".format(A))
 
             # Get the best valid move for the current state
+            legal_choices = self.env.legal(state)
             sorted_actions = np.argsort(A)
             best_action_idx = None
-            legal_choices = self.env.legal(state)
+
             for possible_action in reversed(sorted_actions):
                 if possible_action in legal_choices:
                     best_action_idx = possible_action
@@ -129,6 +129,7 @@ class SimulationProcess(Process):
 
             # Bail if we have encountered a dead end
             if best_action_idx is None:
+                # Calculate the value of the dead end to be its true value minus the number of moves remaining.
                 last_value = self.env.reward(state) - self.env.max_length + num_moves
                 break
 
@@ -140,6 +141,7 @@ class SimulationProcess(Process):
             # Take the simulated step.
             state = self.env.next_state(state, self.env.moves[best_action_idx])
             state_hash = self.env.hash(state)
+            num_moves += 1
 
             # If we reach the end of the game, break out.
             if self.env.done(state):
@@ -154,7 +156,6 @@ class SimulationProcess(Process):
                 not_leaf_node, data = self.database.both_get(idx, state_hash)
                 if not_leaf_node:
                     N, W, Q, V, policy = data
-            num_moves += 1
 
         # Extra Processing done by subclasses.
         self._process_paths(idx, done, last_value, simulation_path)
@@ -180,9 +181,9 @@ class SimulationProcess(Process):
         self.num_nodes = 0
 
         # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
-        self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
-        self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
-        if (not self.single_tree) or (self.single_tree and idx == 0):
+        if not self.single_tree or idx == 0:
+            self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
+            self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
             self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
 
         # Synchronize all of the workers so the databases are in sync.
@@ -193,6 +194,8 @@ class SimulationProcess(Process):
             start_time = time()
             while (time() - start_time) < self.calculation_time:
                 self._simulation(idx)
+
+        # Run simulations until we achieve the desired number of nodes.
         else:
             max_nodes = -self.calculation_time
             while self.num_nodes < max_nodes:
