@@ -1,5 +1,7 @@
 import numpy as np
 import ctypes
+import joblib
+import pickle
 from typing import Optional, Tuple
 
 from multiprocessing import Process, Queue, Array, Event
@@ -20,6 +22,8 @@ class DataProcessCommand:
 
     BothGet = 8
     BothAdd = 9
+
+    Save = 10
 
 
 class BaseDatabase:
@@ -94,6 +98,9 @@ class BaseDatabase:
         self.__add_to_tree(idx, key)
         self.__add(idx, key)
 
+    def __save(self, save_file):
+        joblib.dump(self.data, save_file, compress=0, protocol=pickle.HIGHEST_PROTOCOL)
+
     def run_command(self, idx, command, key, action, last_value):
         if command == 0:
             self.__add(idx, key)
@@ -124,6 +131,9 @@ class BaseDatabase:
 
         elif command == 9:
             self.__add_data_and_tree(idx, key)
+
+        elif command == 10:
+            self.__save(key)
 
 
 class DataProcess(Process, BaseDatabase):
@@ -412,6 +422,26 @@ class DataProcess(Process, BaseDatabase):
 
         command = DataProcessCommand.BothAdd
         self.input_queue.put((idx, command, key, 0, 0))
+
+    def save_database(self, save_file: str) -> None:
+        command = DataProcessCommand.Save
+        self.input_queue.put((0, command, save_file, 0, 0.0))
+
+    @staticmethod
+    def read_database(database_file: str) -> dict:
+        """ Return the dictionary contents of a saved database for examination form master process.
+
+        Parameters
+        ----------
+        database_file : str
+            Path to database file
+
+        Returns
+        -------
+        dict:
+            Mapping state keys to database values.
+        """
+        return joblib.load(database_file)
 
     def __initialize_data(self):
         self.data = {}
