@@ -96,7 +96,9 @@ class SimulationProcess(Process):
 
         # Create the necessary data for the root node
         # noinspection PyTupleAssignmentBalance
-        not_leaf_node, (N, W, Q, V, _) = self.database.both_get(idx, state_hash)
+        not_leaf_node, data = self.database.both_get(idx, state_hash)
+        if data is not None:
+            (N, W, Q, V, _) = data
         policy = self.root_policy
 
         # Local Data
@@ -105,7 +107,7 @@ class SimulationProcess(Process):
         done = False
 
         # Loop until leaf node.
-        while not_leaf_node:
+        while not_leaf_node and data is not None:
             # Calculate Simulation statistics (From Page 8 of Alpha Go Zero)
             virtual_loss = V * self.virtual_loss
             U = self.C * policy * np.sqrt(N.sum()) / (1 + N)
@@ -180,7 +182,8 @@ class SimulationProcess(Process):
         """
         self.num_nodes = 0
         
-
+        self.simulation_barrier.wait()
+        
         self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
         self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
         # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
