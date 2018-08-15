@@ -179,11 +179,13 @@ class SimulationProcess(Process):
             Worker index.
         """
         self.num_nodes = 0
+        
 
+        self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
+        self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
         # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
         if not self.single_tree or idx == 0:
-            self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
-            self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
+            
             self.database.both_add(idx, self.env.hash(self.starting_state), self.root_policy)
 
         # Synchronize all of the workers so the databases are in sync.
