@@ -55,13 +55,13 @@ class OptimalSimulationProcess(SimulationProcess):
 
         self.best_value = Value(c_float, lock=False)
 
-    def _run_simulation(self, idx: int, command: int) -> None:
+    def _run_simulation(self, idx: int) -> None:
         """ An amendment to the _run_simulation method to add a store for keeping the best encountered value. """
         self.best_value.value = -np.float32(np.inf)
         self.num_paths: int = 0
         self.best_paths.fill(-1)
 
-        super(OptimalSimulationProcess, self)._run_simulation(idx, command)
+        super(OptimalSimulationProcess, self)._run_simulation(idx)
 
     def _process_paths(self, idx: int, done: bool, last_value: float, simulation_path) -> None:
         if (not done) or (last_value is None) or (last_value < self.best_value.value):
