@@ -182,8 +182,6 @@ class SimulationProcess(Process):
         """
         self.num_nodes = 0
         
-        self.simulation_barrier.wait()
-        
         self.root_policy, self.root_value = self.network_manager.predict_single(self.network_idx, self.starting_state.copy())
         self.root_policy = ((1 - self.epsilon) * self.root_policy) + (self.epsilon * np.random.dirichlet(self.alpha))
         # Cache root node policy and add randomization. Add the root node to the tree for small optimization.
