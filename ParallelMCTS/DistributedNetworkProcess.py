@@ -144,6 +144,8 @@ class DistributedNetworkProcess(Process):
                         tf.summary.scalar('policy_loss', self.policy_loss)
                         tf.summary.scalar('value_loss', self.value_loss)
                         tf.summary.scalar('total_loss', self.total_loss)
+                    with tf.name_scope("Debug"):
+                        tf.summary.histogram("value_targets", self.value_target)
 
                     for layer in self.model.layers:
                         with tf.name_scope(layer.name):
