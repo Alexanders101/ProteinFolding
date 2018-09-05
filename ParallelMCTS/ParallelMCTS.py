@@ -412,10 +412,7 @@ class ParallelMCTS:
             # Set all illegal moves Probability to 0
             for move_idx in range(self.num_moves):
                 if move_idx not in legal_moves:
-                    pi[move_idx] = -np.inf
-            
-            # Softmax
-            pi = np.exp(pi)
+                    pi[move_idx] = 0
             pi /= np.sum(pi)
             
             # Sample from policy and make next move
