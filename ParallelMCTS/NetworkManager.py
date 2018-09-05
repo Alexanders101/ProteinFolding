@@ -330,7 +330,12 @@ class NetworkManager(Process):
         self.input_queue.put_nowait(idx)
 
         self.output_ready[idx].wait()
-        return self.policy_buffer[idx, 0], self.value_buffer[idx, 0, 0]
+
+        policy = self.policy_buffer[idx, 0]
+        policy = np.exp(policy)
+        policy /= np.sum(policy)
+
+        return policy, self.value_buffer[idx, 0, 0]
 
     def _predict_unsafe(self, idx, states):
         num_samples = states.shape[0]
@@ -340,7 +345,12 @@ class NetworkManager(Process):
         self.input_queue.put_nowait(idx)
 
         self.output_ready[idx].wait()
-        return self.policy_buffer[idx, :num_samples], self.value_buffer[idx, :num_samples]
+
+        policy = self.policy_buffer[idx, :num_samples]
+        policy = np.exp(policy)
+        policy /= np.sum(policy, 1)
+
+        return policy, self.value_buffer[idx, :num_samples]
 
     def fit(self, states: np.ndarray, policy_targets: np.ndarray, value_targets: np.ndarray) -> None:
         """ Schedules a training request.
