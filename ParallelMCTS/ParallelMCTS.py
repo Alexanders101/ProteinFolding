@@ -423,7 +423,7 @@ class ParallelMCTS:
             state = self.env.next_state(state, self.env.moves[next_move])
 
         # Value target is final reward of episode
-        R = np.repeat(self.env.reward(state), t)
+        R = np.repeat(self.env.reward(state) - self.env.num_moves + t, t)
         R = np.expand_dims(R, 1)
         R = R.astype(np.float32)
 
