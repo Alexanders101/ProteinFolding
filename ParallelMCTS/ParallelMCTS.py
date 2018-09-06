@@ -402,7 +402,7 @@ class ParallelMCTS:
                 break
 
             # Run simulation to compute policy
-            pi = self.select_moves(worker_idx, state)
+            pi = self.select_moves(worker_idx, state, state_depth=t)
             
             # Store game data in buffer
             states[t, :] = state
@@ -445,7 +445,7 @@ class ParallelMCTS:
         pi = pi / pi.sum()
         return pi
 
-    def select_moves_async(self, worker_idx: int, state: np.ndarray) -> None:
+    def select_moves_async(self, worker_idx: int, state: np.ndarray, state_depth: int = 0) -> None:
         """
         Calculate a policy from a starting state using MCTS.
 
@@ -455,11 +455,13 @@ class ParallelMCTS:
             Index of this simulation worker.
         state : ndarray
             Starting state.
+        state_depth : int
+            Depth of the state that you are asking for
         """
         worker = self.workers[worker_idx]
 
         # Start simulation on new state
-        worker.set_start_state(state)
+        worker.set_start_state(state, state_depth)
         worker.simulation(clear_tree=True)
 
     def select_moves_result(self, worker_idx: int) -> np.ndarray:
@@ -489,7 +491,7 @@ class ParallelMCTS:
 
         return self._temperature_policy(database.get(0, self.env.hash(state))[0])
 
-    def select_moves(self, worker_idx: int, state: np.ndarray) -> np.ndarray:
+    def select_moves(self, worker_idx: int, state: np.ndarray, state_depth: int = 0) -> np.ndarray:
         """
         Calculate a policy from a starting state using MCTS.
 
@@ -499,6 +501,8 @@ class ParallelMCTS:
             Index of this simulation worker.
         state : ndarray
             Starting state.
+        state_depth : int
+            Depth of the state that you are asking for
 
         Returns
         -------
@@ -510,7 +514,7 @@ class ParallelMCTS:
         database = self.databases[worker_idx]
 
         # Start simulation on new state
-        worker.set_start_state(state)
+        worker.set_start_state(state, state_depth)
         worker.simulation(clear_tree=True)
 
         # Block and wait for results
