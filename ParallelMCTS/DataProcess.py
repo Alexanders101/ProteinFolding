@@ -71,6 +71,8 @@ class BaseDatabase:
             tree.clear()
 
     def __clear_tree(self, idx):
+        if self.single_tree:
+            idx = 0
         self.trees[idx].clear()
 
     def __add_to_tree(self, idx, key):
