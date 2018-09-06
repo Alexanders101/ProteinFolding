@@ -12,7 +12,7 @@ from time import time
 class SimulationProcess(Process):
     def __init__(self, idx: int, network_offset: int, env: SinglePlayerEnvironment,
                  network_manager: NetworkManager, database: DataProcess, state_buffer_base: Array,
-                 state_shape: tuple, simulation_barrier: Barrier, mcts_config: dict):
+                 starting_depth: Value, state_shape: tuple, simulation_barrier: Barrier, mcts_config: dict):
         super(SimulationProcess, self).__init__()
 
         self.idx = idx
@@ -24,6 +24,7 @@ class SimulationProcess(Process):
 
         self.starting_state = np.ctypeslib.as_array(state_buffer_base)
         self.starting_state = self.starting_state.reshape(state_shape)
+        self.starting_depth = starting_depth
 
         self.simulation_barrier = simulation_barrier
         self.input_ready = Event()
@@ -102,7 +103,7 @@ class SimulationProcess(Process):
         policy = self.root_policy
 
         # Local Data
-        num_moves = 0
+        num_moves = self.starting_depth.value
         last_value = None
         done = False
 
@@ -263,6 +264,7 @@ class SimulationProcessManager:
         self.state_buffer_base = Array(state_type, int(np.prod(state_shape)), lock=False)
         self.starting_state = np.ctypeslib.as_array(self.state_buffer_base)
         self.starting_state = self.starting_state.reshape(state_shape)
+        self.starting_depth = Value("l", 0, lock=False)
 
         self.simulation_barrier = Barrier(num_workers)
 
@@ -270,7 +272,7 @@ class SimulationProcessManager:
         self.workers = []
         for worker_idx in range(num_workers):
             worker = worker_class(worker_idx, network_offset, env, network_manager, database,
-                                  self.state_buffer_base, state_shape, self.simulation_barrier,
+                                  self.state_buffer_base, self.starting_depth, state_shape, self.simulation_barrier,
                                   mcts_config, **worker_args)
             self.workers.append(worker)
 
@@ -288,15 +290,18 @@ class SimulationProcessManager:
                 os.kill(worker.pid, signal.SIGTERM)
         print()
 
-    def set_start_state(self, state: np.ndarray) -> None:
+    def set_start_state(self, state: np.ndarray, starting_depth: int = 0) -> None:
         """ Set the starting state for the simulation workers.
 
         Parameters
         ----------
         state: np.ndarray
             Starting state.
+        starting_depth: int
+            How deep the start state is in the tree.
         """
         self.starting_state[:] = state.copy()
+        self.starting_depth.value = starting_depth
 
     def simulation(self, clear_tree: bool = True) -> None:
         """ Begin a single simulation run for all workers.
