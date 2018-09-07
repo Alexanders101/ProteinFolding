@@ -19,11 +19,11 @@ class OneShotMCTS(ParallelMCTS):
                                           database_options=database_options,
                                           **kwargs)
 
-    def select_moves(self, worker_idx: int, state: np.ndarray) -> np.ndarray:
+    def select_moves(self, worker_idx: int, state: np.ndarray, state_depth: int = 0) -> np.ndarray:
         raise NotImplementedError(
             "OneshotMCTS does not select individual moves. Use 'play' method to gather best paths.")
 
-    def select_moves_async(self, worker_idx: int, state: np.ndarray):
+    def select_moves_async(self, worker_idx: int, state: np.ndarray, state_depth: int = 0):
         raise NotImplementedError(
             "OneshotMCTS does not select individual moves. Use 'play' method to gather best paths.")
 
